@@ -87,8 +87,24 @@ def _strict_live_shots(script_window: str, candidate: object) -> list[dict]:
                for shot in candidate if isinstance(shot, dict)]
     if len(queries) != len(candidate) or any(len(query.split()) < 2 for query in queries):
         raise ValueError("Every shot needs a specific, multi-word Openverse query")
-        if len(set(queries)) > 8:
-            raise ValueError("Director plan exceeds the eight-distinct-query budget")
+    if len(set(queries)) != len(queries):
+        raise ValueError("Director plan repeats an identical visual search query")
+
+    # Different wording can still describe the same shot. Reject repeated
+    # visual concepts such as typing/keyboard scenes before they reach render.
+    concept_families = {
+        "typing": re.compile(r"\\b(typing|typewriter|keyboard|keyboarding|data entry|hands typing)\\b"),
+        "meeting": re.compile(r"\\b(meeting room|boardroom|conference room|business meeting)\\b"),
+        "server_room": re.compile(r"\\b(server rack|server room|data center|server farm)\\b"),
+    }
+    seen_families: dict[str, int] = {}
+    for query in queries:
+        for family, pattern in concept_families.items():
+            if pattern.search(query):
+                seen_families[family] = seen_families.get(family, 0) + 1
+    repeated = [family for family, count in seen_families.items() if count > 1]
+    if repeated:
+        raise ValueError("Director plan repeats visual concept(s): " + ", ".join(repeated))
 
     normalized_input = []
     for shot in candidate:
@@ -145,6 +161,10 @@ def build_live_shot_plan(script: str, script_window: str,
         "Create exactly 6-8 documentary shot cards for ONLY the supplied first-45-second narration. "
         "Every narration_anchor must be an exact 4-16 word excerpt, in order, copied from the script. "
         "Each primary_query must be a distinct, concrete 2-8 word Openverse image search query. "
+        "Every shot must depict a DIFFERENT visual idea, physical action, or setting from every other shot. "
+        "Do not repeat typing, keyboards, hands on laptops, or people working at computers in multiple shots; "
+        "use that visual concept at most once. Also avoid repeating meeting rooms or server rooms. "
+        "Do not merely reword a query to disguise the same scene. Vary subjects and visual metaphors across the sequence. "
         "All retrieved visuals will be still images converted to short motion clips: set visual_type to illustration, "
         "never imply that an illustration is authentic footage or documentary evidence. Avoid generic AI brains, "
         "server racks, stock business people, and fabricated interfaces. Use one to three visual changes per idea, "
