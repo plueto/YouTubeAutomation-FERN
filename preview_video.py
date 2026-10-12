@@ -93,9 +93,9 @@ def _strict_live_shots(script_window: str, candidate: object) -> list[dict]:
     # Different wording can still describe the same shot. Reject repeated
     # visual concepts such as typing/keyboard scenes before they reach render.
     concept_families = {
-        "typing": re.compile(r"\\b(typing|typewriter|keyboard|keyboarding|data entry|hands typing)\\b"),
-        "meeting": re.compile(r"\\b(meeting room|boardroom|conference room|business meeting)\\b"),
-        "server_room": re.compile(r"\\b(server rack|server room|data center|server farm)\\b"),
+        "typing": re.compile(r"\b(typing|typewriter|keyboard|keyboarding|data entry|hands typing)\b"),
+        "meeting": re.compile(r"\b(meeting room|boardroom|conference room|business meeting)\b"),
+        "server_room": re.compile(r"\b(server rack|server room|data center|server farm)\b"),
     }
     seen_families: dict[str, int] = {}
     for query in queries:
