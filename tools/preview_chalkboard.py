@@ -4,6 +4,7 @@ Never uploads. By default it refuses to overwrite an existing output MP4.
 """
 from __future__ import annotations
 import argparse
+import json
 import math
 import os
 import subprocess
@@ -89,7 +90,17 @@ def main() -> int:
             return 1
 
     print(f"Preview ready: {output}")
+    scene_plan_path = output.with_suffix(".scene_plan.json")
+    try:
+        scene_plan_data = json.loads(scene_plan_path.read_text(encoding="utf-8"))
+        planner_used = str(scene_plan_data.get("director", "unknown"))
+        planner_note = scene_plan_data.get("ai_director_note")
+    except (OSError, json.JSONDecodeError, AttributeError):
+        planner_used, planner_note = "unknown", None
     print(f"Planner requested: {'OpenRouter AI' if args.ai_plan else 'local rules'}")
+    print(f"Planner used: {planner_used}")
+    if planner_note:
+        print(f"Planner note: {planner_note}")
     qa_cmd = [sys.executable, str(ROOT / "tools" / "chalkboard_quality.py"), str(output), "--script", str(script_path), "--source-audio", str(audio)]
     if args.ai_review:
         qa_cmd.append("--ai-review")
