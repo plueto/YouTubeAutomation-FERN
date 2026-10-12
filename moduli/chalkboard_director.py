@@ -938,7 +938,7 @@ def _validate_rows(rows: list[dict[str, Any]], original_script: str, duration: f
 
 
 def _ai_direct(rows: list[dict[str, Any]], script: str) -> tuple[list[dict[str, Any]] | None, str | None]:
-    """Optional OpenRouter creative plan; key is never printed or saved."""
+    """Use AI for story choices; generate compact, validated chalk geometry locally."""
     _local_env()
     key = os.environ.get("OPENROUTER_API_KEY") or os.environ.get("OPENROUTER_KEY") or os.environ.get("OPENROUTER_TOKEN")
     if not key:
@@ -951,34 +951,26 @@ def _ai_direct(rows: list[dict[str, Any]], script: str) -> tuple[list[dict[str, 
     } for r in rows]
     system = (
         "You are a high-end visual director for a narrated chalkboard documentary. "
-        "Plan visuals that EXPLAIN each spoken beat, not generic infographic slides. "
-        "Do not copy whole narration sentences onto the board. Never invent facts not in the excerpt. "
-        "Use varied compositions only when semantically justified; avoid repeating the same layout. "
-        "Use big readable labels (2-4 words, max 5); no duplicate labels and no filler text. "
-        "Return ONLY one JSON object with a 'scenes' array, one object per supplied scene, in the same order. "
-        "Each object keys: scene (integer), purpose (short string), composition (one of: "
-        + ", ".join(sorted(COMPOSITIONS))
-        + "), motif (one of: " + ", ".join(sorted(MOTIFS))
-        + "), title (2-4 words, distinct from its labels), labels (array of 2-3 short unique labels), "
-        "visual_metaphor (one concise sentence), drawing_sequence (array of 3-5 short physical drawing actions), "
-        "drawing_actions (4-10 executable primitive objects). Do NOT merely suggest actions in prose: supply the coordinates. "
-        "Every drawing_action object has type (line, arrow, box, circle, motif, text, underline, scribble), "
-        "start and end (fraction of the scene duration, 0..1), and color (chalk, dim, teal, yellow). "
-        "Line/arrow/underline/box/scribble require x1,y1,x2,y2. Circle/motif/text require x,y. "
-        "Circle and motif also require size (normalized fraction of frame height); motif also needs a motif name. "
-        "Text actions require text (MUST exactly equal title or one of the labels), size (small/medium/large), "
-        "align (left/center/right), max_width (0.12..0.70). All positions use normalized 0..1 coordinates, keep within 0.05..0.95. "
-        "Use 4-10 sequential actions with start values rising through the scene, and at least one action ending after 0.78. "
-        "Each label must be written exactly once by a text action; do not duplicate text. "
-        "Make the composition specific to the excerpt and keep the focal drawing centered with generous whitespace. "
-        "A timeline is only for actual chronology; numbers layout only when a relevant number is present. "
-        "Cause/effect may use causal_chain; evidence/document, system_map, feedback_loop, decision_tree, "
-        "comparison, spotlight, or object_focus when they genuinely explain the excerpt."
+        "Choose visual explanations that match each spoken beat; avoid generic filler, repeated layouts, "
+        "and copying whole narration sentences onto the board. Never invent facts. "
+        "Return ONLY one compact, valid JSON object with a 'scenes' array containing exactly one object "
+        "for every supplied scene, in the same order. Each object must contain ONLY: scene (same integer), "
+        "purpose (under 8 words), composition (one of: " + ", ".join(sorted(COMPOSITIONS)) + "), "
+        "motif (one of: " + ", ".join(sorted(MOTIFS)) + "), title (2-4 words, distinct from labels), "
+        "labels (array of 2-3 concise, unique labels, each 2-4 words and at most 5 words), "
+        "visual_metaphor (12 words maximum). Keep strings short. "
+        "Do NOT output drawing_actions, coordinates, drawing_sequence, markdown, explanations, or extra keys: "
+        "FERN generates the timed chalk strokes locally. Avoid the same composition as the immediately previous "
+        "scene when another composition fits the meaning. Use timeline only for real chronology, numbers only "
+        "when relevant numbers occur, causal_chain for actual cause/effect, and evidence for a clue or record. "
+        "Make motifs specific to the beat. No stock footage, photo directions, UI mockups, or hand/marker sprites."
     )
     payload = {
         "model": model,
         "temperature": 0.25,
-        "max_tokens": min(6000, 800 + 260 * len(rows)),
+        # Keep the response within free-provider output limits. The model chooses
+        # the story grammar; the local renderer supplies all detailed coordinates.
+        "max_tokens": min(2500, 350 + 100 * len(rows)),
         "reasoning_effort": "none",
         "response_format": {"type": "json_object"},
         "messages": [
@@ -1092,9 +1084,12 @@ def _ai_direct(rows: list[dict[str, Any]], script: str) -> tuple[list[dict[str, 
             if not isinstance(seq, list):
                 seq = base["drawing_sequence"]
             seq = [re.sub(r"\s+", " ", str(x)).strip()[:100] for x in seq[:6] if str(x).strip()]
-            drawing_actions = _sanitize_ai_actions(item.get("drawing_actions"), title, labels)
-            if not drawing_actions:
-                return None, f"AI Director scene {i + 1} lacked a valid unique coordinate-based drawing plan; local plan not used silently"
+            # The AI picks what the scene means; deterministic local geometry draws it.
+            # Asking free models to emit every coordinate for every beat inflated the
+            # response until OpenRouter truncated the JSON before rendering could begin.
+            drawing_actions = _local_drawing_actions(
+                composition, labels, motif, str(base.get("narration_excerpt") or "")
+            )
             result.append({
                 **base,
                 "visual_kind": composition,
