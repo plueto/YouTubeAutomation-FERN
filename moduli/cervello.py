@@ -5,6 +5,7 @@ import random
 import re
 from datetime import datetime
 from moduli.ai_client import chat_ollama
+from moduli.visual_plan import validate_visual_plan
 
 # Pool di "leve" creative: ad ogni run ne peschiamo una a caso per spingere il
 # modello fuori dal solito titolo/argomento. Senza questo l'LLM converge sempre
@@ -96,6 +97,9 @@ Reply ONLY with valid JSON, exact structure:
     "futuristic city technology",
     "scientist working computer"
   ],
+    "visual_beats": [
+        {{"id":"beat-001","narration_anchor":"short exact excerpt from the script","dramatic_function":"hook","visual_intent":"what the viewer should understand","primary_query":"specific subject footage","alternate_queries":["useful alternate query"],"visual_type":"video","shot_type":"close-up","composition":"subject and focal point","motion":"slow_push","duration_hint":5,"transition":"cut","overlay_text":"","sound_cue":"","music_intensity":0.3,"hold_for_reveal":false}}
+    ],
   "thumbnail_description": "Ultra-detailed image generation prompt for FLUX.1 diffusion model. Must be ONE paragraph, 80-120 words. Describe: exact scene composition, foreground subject with precise visual details (clothing, pose, expression, materials), background environment (architecture, lighting, atmosphere, depth), color palette (specific hues, contrast, saturation), lighting setup (direction, quality, color temperature, shadows), cinematic style, camera angle, lens feel. Professional YouTube thumbnail aesthetic, bold visual impact, 16:9 landscape orientation. NO text, logos, watermarks, or words of any kind — pure visual only. Example depth: 'Close-up photorealistic render of a humanoid robot with brushed titanium face and glowing cyan eye lenses, emerging from a dark server room filled with blue neon-lit racks, volumetric fog drifting at ankle level, dramatic rim lighting from the left casting sharp shadows, deep blacks and electric blue highlights, ultra-sharp detail, 85mm portrait lens perspective, cinematic anamorphic flare.'"
 }}
 
@@ -107,6 +111,7 @@ Rules:
 - tags: 12-15 relevant tags
 - script: exactly {target_words} words, engaging pace, no bullet points
 - video_keywords: 12-18 unique English phrases describing stock video scenes (2-4 words each, concrete and visual)
+- visual_beats: concise ordered beat cards anchored to exact script excerpts; aim for 35-55 for an 8-minute video. Include the shown keys, use 1-3 shots per beat as appropriate, and do not invent timestamps or facts. Use specific evidence-oriented searches; label illustrative visuals honestly. Optional sound_cue and overlay_text may be empty.
 - thumbnail_description: ultra-detailed FLUX.1 prompt as described above, always present
 """
 
@@ -139,7 +144,7 @@ MIN_OCCORRENZE_TEMA = 3
 
 # budget di token per il topic: i modelli reasoning ne spendono molti a
 # ragionare prima di rispondere, e con 64 restavano senza spazio per il topic
-MAX_TOKEN_TOPIC = 400
+MAX_TOKEN_TOPIC = 1200
 # il prompt chiede 3-7 parole: oltre questa soglia non e' un topic ma il
 # monologo del modello ("We need to output a short phrase 3-7 words...")
 MAX_PAROLE_TOPIC = 14
@@ -494,7 +499,9 @@ def genera_contenuto(topic: str, strategy: dict = None,
     correzione = ""  # feedback sul tentativo precedente, vuoto al primo giro
     for attempt in range(TENTATIVI_CONTENUTO):
         try:
-            content = _parse_json(chat_ollama(prompt + correzione, max_tokens=8192))
+            content = _parse_json(chat_ollama(
+                prompt + correzione, max_tokens=8192, json_mode=True
+            ))
             if _contenuto_fuori_tema(topic, content):
                 # La strategia auto-appresa sta imponendo il suo argomento:
                 # per i tentativi successivi la si neutralizza, perche' un
@@ -516,6 +523,9 @@ def genera_contenuto(topic: str, strategy: dict = None,
                                           soglia_buona, language, target_minutes)
                 words = len(content.get("script", "").split())
             if words >= soglia_buona:
+                content["visual_beats"] = validate_visual_plan(
+                    content.get("script", ""), content.get("visual_beats")
+                )
                 return content
             if migliore is None or words > len(migliore.get("script", "").split()):
                 migliore = content
@@ -553,5 +563,8 @@ def genera_contenuto(topic: str, strategy: dict = None,
             print(f"[cervello] Nessun tentativo ha raggiunto {soglia_buona} parole: "
                   f"uso il piu' lungo ({parole}, ~{parole / _parole_al_minuto():.1f} "
                   f"min invece di {target_minutes})", flush=True)
+            migliore["visual_beats"] = validate_visual_plan(
+                migliore.get("script", ""), migliore.get("visual_beats")
+            )
             return migliore
     raise last_err

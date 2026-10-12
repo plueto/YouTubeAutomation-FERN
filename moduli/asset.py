@@ -16,6 +16,7 @@ MIN_CLIP_SECONDS = float(os.environ.get("MIN_CLIP_SECONDS", "5"))
 # Pexels accetta fino a 80 risultati per pagina: chiederne 5 era il motivo per
 # cui una keyword non riusciva mai a rendere piu' di 5 clip distinte.
 PEXELS_PER_PAGE_MAX = 80
+MAX_VISUAL_SEARCHES = 24
 
 
 def _filtra_durata(videos: list) -> list:
@@ -277,7 +278,7 @@ def _fetch_metadata(keyword: str, headers: dict) -> dict | None:
     return None
 
 
-def scarica_clip(keyword: str, extra_tags: list[str] | None = None) -> str:
+def _scarica_clip_pexels(keyword: str, extra_tags: list[str] | None = None) -> str:
     os.makedirs(CACHE_DIR, exist_ok=True)
     path = _cache_path(keyword)
     api_key = os.environ.get("PEXELS_API_KEY", "")
@@ -349,8 +350,8 @@ def scarica_clip(keyword: str, extra_tags: list[str] | None = None) -> str:
     return path
 
 
-def scarica_clips(keyword: str, max_n: int = 3, extra_tags: list[str] | None = None,
-                  escludi: set[str] | None = None) -> list[str]:
+def _scarica_clips_pexels(keyword: str, max_n: int = 3, extra_tags: list[str] | None = None,
+                          escludi: set[str] | None = None) -> list[str]:
     """Scarica fino a max_n clip DISTINTE per il keyword (per arricchire il pool
     ed evitare ripetizioni nel montaggio). Ogni clip e' un file fisico diverso,
     indicizzato per id Pexels. Ritorna la lista dei path scaricati/cached.
@@ -467,7 +468,7 @@ def _stampa(msg: str) -> None:
 
 
 def scarica_pool_clips(keywords: list[str], audio_path: str | None = None,
-                       log=_stampa) -> dict:
+                       log=_stampa, visual_plan: list[dict] | None = None) -> dict:
     """Scarica abbastanza clip DISTINTE da coprire tutti i segmenti del video.
 
     Condivisa da `agent.py` (daemon) e `main.py` (one-shot) perche' le due
@@ -476,6 +477,45 @@ def scarica_pool_clips(keywords: list[str], audio_path: str | None = None,
     Ritorna {etichetta_segmento: path_clip}.
     """
     clip_paths: dict[str, str] = {}
+    specs = []
+    if isinstance(visual_plan, list):
+        for beat in visual_plan:
+            if not isinstance(beat, dict):
+                continue
+            query = " ".join(str(beat.get("primary_query") or "").split())
+            if not query:
+                continue
+            alternates = beat.get("alternate_queries")
+            specs.append({
+                "id": str(beat.get("id") or f"beat-{len(specs) + 1:03d}"),
+                "query": query,
+                "alternates": list(dict.fromkeys(
+                    " ".join(str(value).split()) for value in (alternates or [])
+                    if str(value).strip() and " ".join(str(value).split()) != query
+                ))[:2] if isinstance(alternates, list) else [],
+            })
+    if not specs:
+        specs = [{"id": f"keyword-{i + 1:03d}", "query": str(kw).strip(), "alternates": []}
+                 for i, kw in enumerate(keywords or []) if str(kw).strip()]
+
+    # Duplicate queries share one provider search while retaining their first
+    # intended story position.
+    unique_specs = []
+    seen_queries = set()
+    for spec in specs:
+        normalized = spec["query"].casefold()
+        if normalized not in seen_queries:
+            unique_specs.append(spec)
+            seen_queries.add(normalized)
+    if len(unique_specs) > MAX_VISUAL_SEARCHES:
+        last = len(unique_specs) - 1
+        positions = [round(i * last / (MAX_VISUAL_SEARCHES - 1))
+                     for i in range(MAX_VISUAL_SEARCHES)]
+        unique_specs = [unique_specs[position] for position in positions]
+    specs = unique_specs
+    query_ids = {spec["query"]: spec["id"] for spec in specs}
+    alternates_by_query = {spec["query"]: spec["alternates"] for spec in specs}
+    keywords = [spec["query"] for spec in specs]
     if not keywords:
         return clip_paths
     # quante clip distinte servono per non ripeterne nessuna nel video
@@ -492,11 +532,13 @@ def scarica_pool_clips(keywords: list[str], audio_path: str | None = None,
     def _aggiungi(kw: str, paths: list[str]) -> int:
         nuove = 0
         for p in paths:
-            if p in seen:
+            normalized_path = os.path.abspath(p)
+            if normalized_path in seen:
                 continue
-            seen.add(p)
-            # l'etichetta deve restare unica anche nei giri di recupero
-            clip_paths[f"{kw}#{len(clip_paths)}"] = p
+            seen.add(normalized_path)
+            beat_id = query_ids.get(kw, "")
+            prefix = f"{beat_id}|{kw}" if visual_plan and beat_id else kw
+            clip_paths[f"{prefix}#{len(clip_paths)}"] = p
             nuove += 1
         return nuove
 
@@ -510,10 +552,14 @@ def scarica_pool_clips(keywords: list[str], audio_path: str | None = None,
         sorgente = video_ai.sorgente_video()
         if sorgente != "pexels":
             quante = target_clips if sorgente == "ai" else min(video_ai.max_clip(), target_clips)
-            for path in video_ai.genera_pool(keywords, quante, durata_clip, log=log):
-                if path not in seen:
-                    seen.add(path)
-                    clip_paths[f"ai#{len(clip_paths)}"] = path
+            prodotte = video_ai.genera_pool(keywords, quante, durata_clip, log=log)
+            for index, path in enumerate(prodotte):
+                normalized_path = os.path.abspath(path)
+                if normalized_path not in seen:
+                    seen.add(normalized_path)
+                    spec = specs[index] if index < len(specs) else {}
+                    suffix = f"|{spec['id']}|{spec['query']}" if spec else ""
+                    clip_paths[f"ai#{index}{suffix}"] = path
     except Exception as e:  # provider giu', modulo assente: mai bloccare il video
         log(f"  → Generazione AI saltata: {e}")
 
@@ -525,17 +571,19 @@ def scarica_pool_clips(keywords: list[str], audio_path: str | None = None,
     if sorgente == "ai":
         log("  → Nessuna clip AI prodotta: ripiego su Pexels per non perdere il video")
 
-    # ── clip stock da Pexels ─────────────────────────────────────────────────
+    # ── stock/fallback visuals: configured Pexels first, Openverse otherwise ─
     mancanti_stock = max(0, target_clips - len(clip_paths))
     if mancanti_stock <= 0:
         log(f"  → {len(clip_paths)} clip distinte (tutte generate dall'AI)")
         return clip_paths
     # quante clip per keyword per coprire i segmenti rimasti
     per_kw = max(1, -(-mancanti_stock // max(1, len(keywords))))
-    log(f"  → Servono ~{target_clips} clip distinte → {per_kw} per keyword da Pexels")
+    log(f"  → Servono ~{target_clips} clip distinte → {per_kw} per query visuale")
 
     resa: dict[str, int] = {}
     for i, kw in enumerate(keywords):
+        if len(clip_paths) >= target_clips:
+            break
         log(f"  → [{i + 1}/{len(keywords)}] Cerco: {kw} (x{per_kw})")
         try:
             nuove = _aggiungi(kw, scarica_clips(kw, max_n=per_kw))
@@ -544,6 +592,29 @@ def scarica_pool_clips(keywords: list[str], audio_path: str | None = None,
         except Exception as e:
             resa[kw] = 0
             log(f"     ✗ Saltata: {e}")
+
+    # Alternatives are searched only after a primary query returns no usable
+    # distinct asset, avoiding a blanket multiplier on provider requests.
+    alternate_searches = 0
+    for kw in keywords:
+        if resa.get(kw, 0):
+            continue
+        for alternate in alternates_by_query.get(kw, []):
+            if alternate_searches >= 12:
+                break
+            if alternate.casefold() in seen_queries:
+                continue
+            seen_queries.add(alternate.casefold())
+            alternate_searches += 1
+            try:
+                paths = scarica_clips(alternate, max_n=per_kw, escludi=set(clip_paths.values()))
+                nuove = _aggiungi(kw, paths)
+                if nuove:
+                    resa[kw] = nuove
+                    log(f"     ✓ Alternativa {alternate}: {nuove} clip distinte")
+                    break
+            except Exception as e:
+                log(f"     ✗ Alternativa {alternate}: {e}")
 
     # Giro di recupero: alcune keyword rendono meno del richiesto (Pexels ha
     # pochi risultati utili per quel termine) e il pool resta sotto target,
@@ -580,3 +651,286 @@ def scarica_pool_clips(keywords: list[str], audio_path: str | None = None,
 
     log(f"  → {len(clip_paths)} clip distinte scaricate (target {target_clips})")
     return clip_paths
+# ============================================================
+# Free visual provider override
+# Openverse images -> local MP4 motion clips via FFmpeg.
+# Keeps the existing TubeAssistant scarica_pool_clips() interface.
+# ============================================================
+
+from pathlib import Path as _Path
+import hashlib as _hashlib
+import json as _json
+import subprocess as _subprocess
+import tempfile as _tempfile
+import requests as _requests
+
+_OPENVERSE_API = "https://api.openverse.org/v1/images/"
+_OPENVERSE_CACHE = _Path("cache") / "openverse"
+_OPENVERSE_ATTRIBUTIONS = _OPENVERSE_CACHE / "ATTRIBUTIONS.txt"
+
+
+def _ov_slug(text: str) -> str:
+    return "".join(
+        c.lower() if c.isalnum() else "_"
+        for c in str(text)
+    ).strip("_")[:50] or "image"
+
+
+def _ov_clip_path(source_url: str) -> str:
+    digest = _hashlib.sha256(source_url.encode("utf-8")).hexdigest()[:20]
+    return str(_OPENVERSE_CACHE / f"ov_{digest}.mp4")
+
+
+def _ov_search(keyword: str, count: int, candidate_limit: int | None = None) -> list[dict]:
+    params = {
+        "q": keyword,
+        "license": "cc0,pdm,by,by-sa",
+        "filter_dead": "true",
+        "mature": "false",
+        "page": 1,
+        "page_size": (min(20, max(1, candidate_limit)) if candidate_limit is not None
+                  else min(20, max(10, count * 4))),
+    }
+
+    r = _requests.get(_OPENVERSE_API, params=params, timeout=20)
+    r.raise_for_status()
+
+    data = r.json()
+    results = data.get("results", [])
+
+    good = []
+    query_words = {word for word in re.findall(r"[a-z0-9]+", keyword.lower())
+                   if len(word) > 2 and word not in _STOPWORD_TAG}
+    for item in results:
+        url = item.get("url") or item.get("thumbnail")
+        if not url:
+            continue
+
+        width = int(item.get("width") or 0)
+        height = int(item.get("height") or 0)
+
+        if width and height and (width < 640 or height < 360):
+            continue
+
+        description = " ".join(str(item.get(field) or "") for field in
+                                ("title", "creator", "tags", "category"))
+        described = {word for word in re.findall(r"[a-z0-9]+", description.lower())
+                     if len(word) > 2}
+        item["_relevance"] = len(query_words & described)
+        item["_query"] = keyword
+        good.append(item)
+
+    return sorted(good, key=lambda item: -item.get("_relevance", 0))
+
+
+def _ov_record_attribution(item: dict) -> None:
+    source_page = (
+        item.get("foreign_landing_url")
+        or item.get("detail_url")
+        or item.get("related_url")
+        or ""
+    )
+
+    title = item.get("title") or "Untitled"
+    creator = item.get("creator") or "Unknown creator"
+    license_name = item.get("license") or "Unknown license"
+    license_version = item.get("license_version") or ""
+    license_url = item.get("license_url") or ""
+
+    line = (
+        f"{title} | {creator} | {license_name} {license_version} | "
+        f"{license_url} | {source_page}"
+    )
+
+    try:
+        existing = _OPENVERSE_ATTRIBUTIONS.read_text(
+            encoding="utf-8", errors="ignore"
+        )
+    except FileNotFoundError:
+        existing = ""
+
+    if line not in existing:
+        with _OPENVERSE_ATTRIBUTIONS.open("a", encoding="utf-8") as f:
+            f.write(line + "\n")
+
+
+def _ov_save_manifest(item: dict, clip_path: str) -> None:
+    manifest_path = _Path(clip_path + ".json")
+    manifest = {
+        "query": item.get("_query", ""),
+        "title": item.get("title", ""),
+        "creator": item.get("creator", ""),
+        "asset_url": item.get("url") or item.get("thumbnail") or "",
+        "license": item.get("license", ""),
+        "license_url": item.get("license_url", ""),
+        "source_page": (item.get("foreign_landing_url") or item.get("detail_url")
+                        or item.get("related_url") or ""),
+        "visual_type": "illustration",
+    }
+    temporary = _Path(str(manifest_path) + ".tmp")
+    temporary.write_text(_json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    temporary.replace(manifest_path)
+
+
+def _ov_make_clip(image_path: str, clip_path: str, duration: float) -> None:
+    from moduli.ffmpeg_utils import ffmpeg_path
+
+    fps = 30
+    frames = max(1, int(duration * fps))
+
+    vf = (
+        "scale=1280:720:force_original_aspect_ratio=increase,"
+        "crop=1280:720,"
+        f"setsar=1,fps={fps},format=yuv420p"
+    )
+
+    cmd = [
+        ffmpeg_path(),
+        "-y",
+        "-nostdin",
+        "-loglevel", "error",
+        "-loop", "1",
+        "-i", image_path,
+        "-vf", vf,
+        "-t", f"{duration:.3f}",
+        "-frames:v", str(frames),
+        "-an",
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-crf", "22",
+        "-pix_fmt", "yuv420p",
+        "-movflags", "+faststart",
+        clip_path,
+    ]
+
+    _subprocess.run(cmd, check=True, timeout=max(120, int(duration * 30)),
+                    stdin=_subprocess.DEVNULL, capture_output=True)
+
+
+def _ov_download_and_render(item: dict, duration: float) -> str | None:
+    source_url = item.get("url") or item.get("thumbnail")
+    if not source_url:
+        return None
+
+    clip_path = _ov_clip_path(source_url)
+    _Path(clip_path).parent.mkdir(parents=True, exist_ok=True)
+
+    if _Path(clip_path).exists():
+        _ov_save_manifest(item, clip_path)
+        return clip_path
+
+    try:
+        response = _requests.get(
+            source_url,
+            timeout=30,
+            headers={"User-Agent": "TubeAssistant/1.0"},
+        )
+        response.raise_for_status()
+
+        with _tempfile.NamedTemporaryFile(
+            suffix=".img", delete=False
+        ) as tmp:
+            tmp.write(response.content)
+            temp_image = tmp.name
+
+        try:
+            _ov_make_clip(temp_image, clip_path, duration)
+        finally:
+            try:
+                _Path(temp_image).unlink(missing_ok=True)
+            except Exception:
+                pass
+
+        if _Path(clip_path).exists():
+            _ov_record_attribution(item)
+            _ov_save_manifest(item, clip_path)
+            return clip_path
+
+    except Exception:
+        try:
+            _Path(clip_path).unlink(missing_ok=True)
+        except Exception:
+            pass
+
+    return None
+
+
+def _openverse_clip(
+    keyword: str,
+    extra_tags: list[str] | None = None
+) -> str:
+    items = _ov_search(keyword, 1)
+
+    for item in items:
+        path = _ov_download_and_render(item, 5.0)
+        if path:
+            return path
+
+    raise RuntimeError(f"No Openverse results for: {keyword}")
+
+
+def _openverse_clips(
+    keyword: str,
+    max_n: int = 3,
+    extra_tags: list[str] | None = None,
+    escludi: set[str] | None = None,
+) -> list[str]:
+    escludi = escludi or set()
+
+    try:
+        from moduli.montaggio import SEGMENT_DURATION
+        duration = float(SEGMENT_DURATION)
+    except Exception:
+        duration = 5.0
+
+    results = _ov_search(keyword, max_n)
+    paths: list[str] = []
+
+    for item in results:
+        source_url = item.get("url") or item.get("thumbnail")
+        if not source_url:
+            continue
+
+        candidate = _ov_clip_path(source_url)
+
+        if candidate in escludi or candidate in paths:
+            continue
+
+        path = _ov_download_and_render(item, duration)
+        if path and path not in escludi and path not in paths:
+            paths.append(path)
+
+        if len(paths) >= max_n:
+            break
+
+    if not paths:
+        raise RuntimeError(f"No Openverse results for: {keyword}")
+
+    return paths
+
+
+def scarica_clip(keyword: str, extra_tags: list[str] | None = None) -> str:
+    try:
+        return _scarica_clip_pexels(keyword, extra_tags)
+    except Exception as pexels_error:
+        try:
+            return _openverse_clip(keyword, extra_tags)
+        except Exception as openverse_error:
+            raise RuntimeError(
+                f"No clip for {keyword!r}: Pexels: {pexels_error}; "
+                f"Openverse: {openverse_error}"
+            ) from openverse_error
+
+
+def scarica_clips(keyword: str, max_n: int = 3, extra_tags: list[str] | None = None,
+                  escludi: set[str] | None = None) -> list[str]:
+    try:
+        return _scarica_clips_pexels(keyword, max_n, extra_tags, escludi)
+    except Exception as pexels_error:
+        try:
+            return _openverse_clips(keyword, max_n, extra_tags, escludi)
+        except Exception as openverse_error:
+            raise RuntimeError(
+                f"No clips for {keyword!r}: Pexels: {pexels_error}; "
+                f"Openverse: {openverse_error}"
+            ) from openverse_error

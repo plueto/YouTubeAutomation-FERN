@@ -31,7 +31,6 @@ def _check_env() -> None:
         "TELEGRAM_BOT_TOKEN": "Telegram bot token",
         "TELEGRAM_CHAT_ID":   "Telegram chat ID",
         "AI_SERVICE":         "AI service (run the wizard: python wizard.py)",
-        "PEXELS_API_KEY":     "Pexels API key",
     }
     for key, label in required.items():
         if not os.environ.get(key, "").strip():
@@ -141,9 +140,9 @@ def _spiega_errore(err: str) -> str:
         return "Disco pieno: libera spazio e riprova con /forza."
     if "ffmpeg not found" in e:
         return "ffmpeg non trovato: installalo e aggiungilo al PATH, oppure imposta FFMPEG_PATH nel .env."
-    if "pexels" in e and ("401" in e or "403" in e or "unauthorized" in e):
-        return "Chiave Pexels rifiutata: controlla PEXELS_API_KEY nel .env."
-    if "no pexels results" in e or "nessuna clip" in e:
+    if "openverse" in e and ("401" in e or "403" in e or "unauthorized" in e):
+        return "Openverse non è raggiungibile o ha rifiutato la richiesta."
+    if "no openverse results" in e or "nessuna clip" in e:
         return "Nessuna clip trovata per le keyword generate: riprova con /forza (verranno generate keyword nuove)."
     if "429" in e or "ratelimit" in e or "rate limit" in e or "too many requests" in e:
         return "Servizio esterno in rate limit (troppe richieste): aspetta qualche minuto e usa /forza."
@@ -356,9 +355,9 @@ def _clear_checkpoint() -> None:
         pass
 
 
-def _scarica_tutte_le_clips(keywords: list) -> dict:
+def _scarica_tutte_le_clips(keywords: list, visual_plan: list[dict] | None = None) -> dict:
     """Scarica abbastanza clip distinte da coprire tutti i segmenti del video."""
-    return scarica_pool_clips(keywords, AUDIO_PATH, log=_log)
+    return scarica_pool_clips(keywords, AUDIO_PATH, log=_log, visual_plan=visual_plan)
 
 
 def run_pipeline(state: dict, dry_run: bool = False) -> None:
@@ -421,8 +420,16 @@ def run_pipeline(state: dict, dry_run: bool = False) -> None:
         notify_start(topic)
         _log("  → Generazione script in corso (può richiedere 30-60s)...")
         content = genera_contenuto(topic, strategy=strategy, topic_esplicito=dalla_coda)
+        director_input_dir = os.path.join(os.path.dirname(__file__), "director_input")
+        os.makedirs(director_input_dir, exist_ok=True)
+        director_script_path = os.path.join(director_input_dir, "script.txt")
+        with open(director_script_path, "w", encoding="utf-8") as f:
+            f.write(content.get("script", "").strip() + "\n")
+        print(f"  Saved Director input: {director_script_path}")
         cp.update({"topic": topic, "content": content, "steps": ["content"]})
         _save_checkpoint(cp)
+    from moduli.visual_plan import save_visual_plan
+    visual_plan = save_visual_plan(content.get("script", ""), content.get("visual_beats"))
     _log(f"  → Titolo: {content['title']}")
     _log(f"  → Tag: {', '.join(content.get('tags', [])[:5])}...")
     _log(f"  → Keyword video: {', '.join(content.get('video_keywords', [])[:4])}...")
@@ -443,10 +450,13 @@ def run_pipeline(state: dict, dry_run: bool = False) -> None:
     size = os.path.getsize(AUDIO_PATH) // 1024
     _check_abort()
     _log(f"  → Audio salvato: {AUDIO_PATH} ({size} KB)")
+    from moduli.sottotitoli import cue_da_script
+    from moduli.montaggio import _media_duration
+    subtitle_cues = cue_da_script(content.get("script", ""), _media_duration(AUDIO_PATH))
 
     # ── CLIP ────────────────────────────────────────────────────────────────
     _segna_step("clips")
-    _log("🎞️ [4/7] Clip — scarico video da Pexels...")
+    _log("🎞️ [4/7] Clip — scarico visual da Openverse...")
     keywords = content.get("video_keywords", [])
     clip_paths = {}
     if "clips" in cp["steps"] and cp.get("clip_paths"):
@@ -456,7 +466,7 @@ def run_pipeline(state: dict, dry_run: bool = False) -> None:
             _log(f"  → Ripreso da checkpoint: {len(clip_paths)} clip")
     if not clip_paths:
         notify_step("clips", "Scarico clip video da Pexels...")
-        clip_paths = _scarica_tutte_le_clips(keywords)
+        clip_paths = _scarica_tutte_le_clips(keywords, visual_plan)
         cp["clip_paths"] = clip_paths
         if "clips" not in cp["steps"]:
             cp["steps"].append("clips")
@@ -509,6 +519,8 @@ def run_pipeline(state: dict, dry_run: bool = False) -> None:
             mood=content.get("mood"),
             on_progress=_avanzamento,
             captions_text=content.get("script"),
+            visual_plan=visual_plan,
+            subtitle_cues=subtitle_cues,
         )
         cp["steps"].append("montage")
         _save_checkpoint(cp)

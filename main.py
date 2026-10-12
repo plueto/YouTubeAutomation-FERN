@@ -12,6 +12,7 @@ from moduli.thumbnail import genera_thumbnail
 from moduli.pubblica import pubblica_video
 from moduli.analytics import leggi_performance
 from moduli.strategia import calcola_strategia
+from moduli.visual_plan import save_visual_plan
 
 AUDIO_PATH = "output/narration.mp3"
 VIDEO_PATH = "output/output_finale.mp4"
@@ -134,14 +135,25 @@ def run(dry_run: bool = False):
         topic = genera_topic(strategy=strategy, recent_topics=_recent_topics())
         print(f"  Topic generato: {topic}")
     content = genera_contenuto(topic, strategy=strategy, topic_esplicito=dalla_coda)
+    visual_plan = save_visual_plan(content.get("script", ""), content.get("visual_beats"))
+    director_input_dir = os.path.join(os.path.dirname(__file__), "director_input")
+    os.makedirs(director_input_dir, exist_ok=True)
+    director_script_path = os.path.join(director_input_dir, "script.txt")
+    with open(director_script_path, "w", encoding="utf-8") as f:
+        f.write(content.get("script", "").strip() + "\n")
+    print(f"  Saved Director input: {director_script_path}")
     print(f"  Title: {content['title']}")
 
     print("\n=== [B] Generating audio ===")
     genera_audio(content["script"], AUDIO_PATH)
     print(f"  Saved: {AUDIO_PATH}")
+    from moduli.montaggio import _media_duration
+    from moduli.sottotitoli import cue_da_script
+    subtitle_cues = cue_da_script(content.get("script", ""), _media_duration(AUDIO_PATH))
 
     print("\n=== [C] Fetching video clips ===")
-    clip_paths = scarica_pool_clips(content.get("video_keywords", []), AUDIO_PATH)
+    clip_paths = scarica_pool_clips(content.get("video_keywords", []), AUDIO_PATH,
+                                    visual_plan=visual_plan)
 
     if not clip_paths:
         print("ERROR: No clips downloaded. Aborting.")
@@ -159,7 +171,8 @@ def run(dry_run: bool = False):
     assicura_spazio(work_dir="output", protetti=protetti)
     print(f"  Disk free: {spazio_libero_gb('output'):.1f} GB")
     monta_video(AUDIO_PATH, list(clip_paths.keys()), clip_paths, VIDEO_PATH,
-                mood=content.get("mood"), captions_text=content.get("script"))
+                mood=content.get("mood"), captions_text=content.get("script"),
+                visual_plan=visual_plan, subtitle_cues=subtitle_cues)
     print(f"  Saved: {VIDEO_PATH}")
 
     print("\n=== [E] Generating thumbnail ===")
@@ -185,4 +198,25 @@ def run(dry_run: bool = False):
 
 
 if __name__ == "__main__":
-    run()
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Generate a video locally; YouTube upload is opt-in."
+    )
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Render video and thumbnail without uploading (default).",
+    )
+    group.add_argument(
+        "--upload",
+        action="store_true",
+        help="Explicitly allow this run to upload to YouTube.",
+    )
+    args = parser.parse_args()
+
+    if args.upload:
+        os.environ["YOUTUBE_UPLOAD_ENABLED"] = "1"
+
+    run(dry_run=not args.upload)

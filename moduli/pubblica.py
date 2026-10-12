@@ -85,6 +85,13 @@ def pubblica_video(
     immediate: bool = False,
     privacy_status: str = "private",
 ) -> str:
+    if os.environ.get("YOUTUBE_UPLOAD_ENABLED", "").strip().lower() not in {"1", "true", "yes"}:
+        raise RuntimeError(
+            "YouTube upload blocked: YOUTUBE_UPLOAD_ENABLED is not enabled. "
+            "Use main.py --upload for a one-time upload, or explicitly enable "
+            "YOUTUBE_UPLOAD_ENABLED=1 for trusted automation."
+        )
+
     youtube = _get_youtube()
     if publish_at is None and not immediate:
         publish_at = _next_best_slot()

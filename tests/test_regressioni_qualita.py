@@ -57,11 +57,157 @@ class AudioConsegnaTests(unittest.TestCase):
         gia' al volume giusto."""
         from moduli import audio
 
-        with patch.object(audio, "_edge_tts", return_value=True), \
+        with patch.object(audio, "_kokoro_tts", return_value=False), \
+             patch.object(audio, "_edge_tts", return_value=True), \
              patch.object(audio, "_audio_valido", return_value=True), \
              patch.object(audio, "_normalizza") as norm:
             audio.genera_audio("testo di prova", "out.mp3")
         norm.assert_called_once_with("out.mp3")
+
+    def test_edge_voice_preference_is_not_replaced_by_kokoro_default(self):
+        from moduli import audio
+
+        with patch.object(audio, "_load_voice", return_value="it-IT-DiegoNeural"), \
+             patch.object(audio, "_kokoro_tts") as kokoro, \
+             patch.object(audio, "_edge_tts", return_value=True) as edge, \
+             patch.object(audio, "_audio_valido", return_value=True), \
+             patch.object(audio, "_normalizza"):
+            audio.genera_audio("test narration", "out.mp3")
+        kokoro.assert_not_called()
+        self.assertEqual(edge.call_args.args[2], "it-IT-DiegoNeural")
+
+    def test_explicit_kokoro_voice_remains_available(self):
+        from moduli import audio
+
+        with patch.object(audio, "KOKORO_VOICE", ""), \
+             patch.object(audio, "_load_voice", return_value="af_heart"), \
+             patch.object(audio, "_kokoro_tts", return_value=True) as kokoro, \
+             patch.object(audio, "_audio_valido", return_value=True), \
+             patch.object(audio, "_normalizza"), \
+             patch.object(audio, "_edge_tts") as edge:
+            audio.genera_audio("test narration", "out.mp3")
+        kokoro.assert_called_once_with("test narration", "out.mp3", "af_heart")
+        edge.assert_not_called()
+
+    def test_ducking_graph_uses_voice_sidechain_music_curve_and_limiter(self):
+        from moduli.montaggio import build_audio_filter_graph
+
+        events = [{"start": 0.0, "end": 6.0,
+                   "beat": {"music_intensity": 0.2, "sound_cue": "impact"}}]
+        graph = build_audio_filter_graph(
+            6.0, events, 2,
+            [{"input_index": 3, "start": 2.0, "gain": 0.1}],
+            music_volume=0.1,
+        )
+        self.assertIn("sidechaincompress=threshold=0.035:ratio=6", graph)
+        self.assertIn("volume=eval=frame", graph)
+        self.assertIn("adelay=2000|2000", graph)
+        self.assertIn("[mixed]loudnorm=I=-14.0:TP=-1.5", graph)
+        self.assertIn("alimiter=limit=0.8414", graph)
+
+    def test_missing_local_sfx_is_silently_omitted(self):
+        from moduli.montaggio import _resolve_sfx_cues
+
+        events = [{"start": 4.0, "beat": {"sound_cue": "impact"}}]
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(_resolve_sfx_cues(events, tmp), [])
+
+
+class EditorialRenderTests(unittest.TestCase):
+    def test_still_camera_moves_are_plan_selected_and_static_holds_stay_static(self):
+        from moduli import montaggio
+
+        class Result:
+            returncode = 0
+            stderr = ""
+
+        commands = []
+
+        def run(command, **kwargs):
+            commands.append(command)
+            return Result()
+
+        with patch.object(montaggio, "_codec_segmento", return_value="libx264"), \
+             patch.object(montaggio, "_codec_args", return_value=["-c:v", "libx264"]), \
+             patch.object(montaggio.subprocess, "run", side_effect=run):
+            montaggio._render_segment_ffmpeg(
+                "cache/openverse/ov_test.mp4", "push.mp4", 0, 4,
+                src_duration=5, motion="slow_push",
+            )
+            montaggio._render_segment_ffmpeg(
+                "cache/openverse/ov_test.mp4", "hold.mp4", 0, 4,
+                src_duration=5, motion="static_hold",
+            )
+        filters = [command[command.index("-vf") + 1] for command in commands]
+        self.assertIn("zoompan=z=", filters[0])
+        self.assertNotIn("zoompan=", filters[1])
+
+    def test_dissolve_graph_overlaps_only_visuals_and_restores_full_duration(self):
+        from moduli.montaggio import _build_xfade_filter_graph
+
+        graph = _build_xfade_filter_graph([4.0, 5.0, 6.0], 15.0)
+        self.assertEqual(graph.count("xfade=transition=fade"), 2)
+        self.assertIn("offset=3.700", graph)
+        self.assertIn("offset=8.400", graph)
+        self.assertIn("tpad=stop_mode=clone:stop_duration=0.600", graph)
+        self.assertIn("trim=duration=15.000", graph)
+
+    def test_dissolve_graph_rejects_unusable_short_spans(self):
+        from moduli.montaggio import _build_xfade_filter_graph
+
+        with self.assertRaisesRegex(ValueError, "too short"):
+            _build_xfade_filter_graph([0.01, 1.0], 1.01)
+
+    def test_plan_aware_renderer_emits_ordered_variable_duration_jobs(self):
+        from moduli import montaggio
+
+        script = "A company hid the losses. Workers found the missing records."
+        plan = [
+            {"id": "beat-001", "narration_anchor": "A company hid the losses.",
+             "primary_query": "company archive", "dramatic_function": "hook",
+             "motion": "slow_push"},
+            {"id": "beat-002", "narration_anchor": "Workers found the missing records.",
+             "primary_query": "workers records", "dramatic_function": "reveal",
+             "hold_for_reveal": True},
+        ]
+        clip_paths = {
+            "beat-001|company archive#0": "clip-a.mp4",
+            "beat-002|workers records#1": "clip-b.mp4",
+        }
+        rendered = []
+
+        def capture(*args, **kwargs):
+            rendered.append(args)
+
+        class Result:
+            returncode = 0
+            stderr = ""
+
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch.object(montaggio, "_media_duration", side_effect=[20.0, 8.0, 8.0]), \
+             patch.object(montaggio, "_filtra_clip_leggibili",
+                          return_value=(list(clip_paths.values()), {"clip-a.mp4": 8.0, "clip-b.mp4": 8.0})), \
+             patch.object(montaggio, "_render_workers", return_value=1), \
+             patch.object(montaggio, "_pick_music", return_value=None), \
+             patch.object(montaggio, "_render_segment_ffmpeg", side_effect=capture), \
+             patch.object(montaggio, "_mux_audio_ffmpeg") as mux, \
+             patch.object(montaggio.subprocess, "run", return_value=Result()) as ffmpeg_run:
+            montaggio._monta_video_ffmpeg(
+                "voice.mp3", list(clip_paths), clip_paths,
+                os.path.join(tmp, "preview.mp4"), captions_text=script,
+                visual_plan=plan,
+            )
+
+        from moduli.visual_plan import build_shot_timeline
+        expected_events = build_shot_timeline(script, plan, 20.0)
+        self.assertEqual(len(rendered), len(expected_events))
+        self.assertAlmostEqual(sum(call[3] for call in rendered), 20.0)
+        first_beat_shots = expected_events[0]["shot_count"]
+        self.assertTrue(all(call[0] == "clip-a.mp4" for call in rendered[:first_beat_shots]))
+        self.assertTrue(all(call[0] == "clip-b.mp4" for call in rendered[first_beat_shots:]))
+        self.assertTrue(any(call[6] == "slow_push" for call in rendered))
+        mux.assert_called_once()
+        ffmpeg_run.assert_called_once()
 
 
 class PoolClipTests(unittest.TestCase):

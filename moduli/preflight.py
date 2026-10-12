@@ -110,7 +110,7 @@ def run_checks(workspace: str | Path = ".") -> list[dict]:
     ffmpeg = os.environ.get("FFMPEG_PATH") or shutil.which("ffmpeg")
     add("ffmpeg", bool(ffmpeg), ffmpeg or "non trovato in PATH/FFMPEG_PATH")
 
-    for key in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "PEXELS_API_KEY", "AI_SERVICE"):
+    for key in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "AI_SERVICE"):
         add(key, _has_env(key), _dettaglio_env(key))
 
     service = os.environ.get("AI_SERVICE", "").strip()
@@ -136,11 +136,11 @@ def run_checks(workspace: str | Path = ".") -> list[dict]:
         from moduli.video_ai import PROVIDER_DEFAULTS, provider, sorgente_video
         sorgente = sorgente_video()
         if sorgente == "pexels":
-            add("sorgente clip", True, "Pexels (stock)")
+            add("sorgente clip", True, "Openverse images → local MP4")
         else:
             conf = PROVIDER_DEFAULTS[provider()]
             ha_chiave = _has_env(conf["env_key"])
-            etichetta = "solo AI" if sorgente == "ai" else "ibrido AI + Pexels"
+            etichetta = "solo AI" if sorgente == "ai" else "ibrido AI + Openverse"
             add("sorgente clip", ha_chiave,
                 f"{etichetta} via {conf['etichetta']}" if ha_chiave
                 else f"{etichetta} ma {conf['env_key']} {_dettaglio_env(conf['env_key'])}")

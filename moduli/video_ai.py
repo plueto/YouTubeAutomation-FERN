@@ -30,6 +30,7 @@ di Pexels.
 """
 
 import hashlib
+import json
 import os
 import time
 
@@ -188,6 +189,20 @@ def _percorso_cache(prompt: str) -> str:
     un rilancio della pipeline sullo stesso topic non la ripaga."""
     impronta = hashlib.sha256(f"{provider()}|{modello()}|{prompt}".encode()).hexdigest()[:16]
     return os.path.join(CACHE_DIR, f"ai_{impronta}.mp4")
+
+
+def _salva_metadati(dest: str, keyword: str, prompt: str) -> None:
+    metadata = {
+        "query": keyword,
+        "prompt": prompt,
+        "provider": provider(),
+        "model": modello(),
+        "visual_type": "illustration" if provider() in PROVIDER_IMMAGINE else "video",
+    }
+    temporary = dest + ".json.tmp"
+    with open(temporary, "w", encoding="utf-8") as handle:
+        json.dump(metadata, handle, ensure_ascii=False, indent=2)
+    os.replace(temporary, dest + ".json")
 
 
 def _scarica(url: str, dest: str) -> None:
@@ -467,6 +482,7 @@ def genera_clip(keyword: str, durata: int = 5, stile: str = "") -> str:
     prompt = costruisci_prompt(keyword, stile or _stile_utente())
     dest = _percorso_cache(prompt)
     if os.path.exists(dest) and os.path.getsize(dest) > 10_000:
+        _salva_metadati(dest, keyword, prompt)
         return dest
     genera = _GENERATORI[provider()]
     try:
@@ -493,8 +509,10 @@ def genera_clip(keyword: str, durata: int = 5, stile: str = "") -> str:
             raise VideoAIError("clip generata non valida")
         if os.path.abspath(url) != os.path.abspath(dest):
             os.replace(url, dest)
+        _salva_metadati(dest, keyword, prompt)
         return dest
     _scarica(url, dest)
+    _salva_metadati(dest, keyword, prompt)
     return dest
 
 

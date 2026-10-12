@@ -7,6 +7,7 @@ segmenti invece che sparse a caso dallo shuffle.
 """
 
 import json
+import ast
 import os
 import tempfile
 import unittest
@@ -186,6 +187,66 @@ class PoolClipTests(_EnvPulito):
         self.assertTrue(pool)
         self.assertFalse(any(k.startswith("ai#") for k in pool))
 
+    def test_visual_plan_searches_alternates_only_after_primary_fails(self):
+        os.environ.update({"VIDEO_SOURCE": "pexels", "PEXELS_API_KEY": ""})
+        visual_plan = [{
+            "id": "beat-001",
+            "primary_query": "specific archive records",
+            "alternate_queries": ["company archive building"],
+        }]
+        calls = []
+
+        def search(query, max_n=3, extra_tags=None, escludi=None):
+            calls.append(query)
+            if query == "specific archive records":
+                raise RuntimeError("no results")
+            return ["openverse-still.mp4"]
+
+        with patch.object(asset, "scarica_clips", side_effect=search):
+            pool = asset.scarica_pool_clips([], None, log=lambda _message: None,
+                                           visual_plan=visual_plan)
+        self.assertEqual(calls, ["specific archive records", "company archive building"])
+        self.assertEqual(list(pool.values()), ["openverse-still.mp4"])
+        self.assertTrue(any("beat-001" in key for key in pool))
+
+
+class AssetProviderFallbackTests(unittest.TestCase):
+    def test_openverse_preview_page_limit_is_exactly_two(self):
+        class Response:
+            def raise_for_status(self):
+                return None
+
+            @staticmethod
+            def json():
+                return {"results": [
+                    {"url": "https://assets.example/one.jpg", "width": 1280,
+                     "height": 720, "title": "Concrete archive records"},
+                    {"url": "https://assets.example/two.jpg", "width": 1280,
+                     "height": 720, "title": "Archive room"},
+                ]}
+
+        with patch.object(asset._requests, "get", return_value=Response()) as request:
+            results = asset._ov_search("archive records", 2, candidate_limit=2)
+        self.assertEqual(len(results), 2)
+        self.assertEqual(request.call_args.kwargs["params"]["page_size"], 2)
+
+    def test_public_clip_api_falls_back_to_openverse(self):
+        from moduli import asset
+
+        with patch.object(asset, "_scarica_clips_pexels", side_effect=RuntimeError("no key")), \
+             patch.object(asset, "_openverse_clips", return_value=["still.mp4"]) as openverse:
+            self.assertEqual(asset.scarica_clips("specific subject", max_n=2), ["still.mp4"])
+        openverse.assert_called_once()
+
+    def test_provider_functions_are_not_shadowed_by_duplicate_definitions(self):
+        from pathlib import Path
+
+        source = Path("moduli/asset.py").read_text(encoding="utf-8")
+        module = ast.parse(source)
+        names = [node.name for node in module.body if isinstance(node, ast.FunctionDef)]
+        for name in ("scarica_clip", "scarica_clips", "scarica_pool_clips", "rebuild_index"):
+            self.assertEqual(names.count(name), 1, f"duplicate public definition: {name}")
+
 
 class OrdineMontaggioTests(unittest.TestCase):
     def test_le_clip_ai_aprono_il_video(self):
@@ -217,6 +278,33 @@ class OrdineMontaggioTests(unittest.TestCase):
         seq = _build_clip_sequence(["P1", "P2"], 4, prioritarie=["ROTTA", "P2"])
         self.assertEqual(seq[0], "P2")
         self.assertNotIn("ROTTA", seq)
+
+    def test_piano_seleziona_in_ordine_e_deduplica_file_fisici(self):
+        from moduli.montaggio import _select_timeline_clips
+
+        first = "cache/pexels/pex_first.mp4"
+        second = "cache/pexels/pex_second.mp4"
+        events = [
+            {"beat": {"id": "beat-001", "primary_query": "company archive", "visual_type": "video"}},
+            {"beat": {"id": "beat-002", "primary_query": "workers records", "visual_type": "video"}},
+        ]
+        pool = {
+            "beat-002|workers records#0": second,
+            "beat-001|company archive#1": first,
+            "duplicate-alias": first,
+        }
+        self.assertEqual(_select_timeline_clips(events, pool, [first, second]), [first, second])
+
+    def test_video_beats_prefer_motion_over_openverse_stills(self):
+        from moduli.montaggio import _select_timeline_clips
+
+        video = "cache/pexels/pex_subject.mp4"
+        still = "cache/openverse/ov_subject.mp4"
+        video_event = {"beat": {"id": "video-beat", "primary_query": "subject", "visual_type": "video"}}
+        still_event = {"beat": {"id": "still-beat", "primary_query": "subject", "visual_type": "illustration"}}
+        pool = {"video subject": video, "still subject": still}
+        self.assertEqual(_select_timeline_clips([video_event], pool, [video, still]), [video])
+        self.assertEqual(_select_timeline_clips([still_event], pool, [video, still]), [still])
 
 
 class CacheAITests(unittest.TestCase):

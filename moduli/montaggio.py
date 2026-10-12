@@ -62,6 +62,74 @@ def _build_clip_sequence(clip_files: list, n_segments: int,
     return seq
 
 
+def _visual_source_type(path: str) -> str:
+    normalized = path.replace("\\", "/").lower()
+    if "/openverse/" in normalized or os.path.basename(normalized).startswith("ov_"):
+        return "still"
+    if ("/ai_video/" in normalized
+            and os.environ.get("VIDEO_AI_PROVIDER", "").strip().lower() == "openrouter"):
+        return "still"
+    return "video"
+
+
+def _select_timeline_clips(events: list[dict], clip_paths: dict, usable_paths: list[str]) -> list[str]:
+    """Choose relevant assets in story order, using every distinct file once first."""
+    allowed = set(usable_paths)
+    candidates = []
+    for key, path in clip_paths.items():
+        if path in allowed:
+            candidates.append((str(key), path))
+    if not candidates:
+        raise RuntimeError("montaggio: nessuna clip disponibile per il piano visuale")
+
+    selected = []
+    used = set()
+    used_by_beat: dict[str, set[str]] = {}
+    recent = []
+    for event in events:
+        beat = event["beat"]
+        beat_id = str(beat.get("id") or "").casefold()
+        beat_candidates = [(key, path) for key, path in candidates
+                           if beat_id and beat_id in key.casefold()]
+        active_candidates = beat_candidates or candidates
+        beat_used = used_by_beat.setdefault(beat_id, set()) if beat_candidates else used
+        if beat_candidates and all(path in beat_used for _, path in beat_candidates):
+            beat_used.clear()
+        query_words = set(re.findall(
+            r"[a-z0-9]+",
+            " ".join((str(beat.get("primary_query") or ""),
+                      str(beat.get("visual_intent") or ""))).casefold(),
+        ))
+        desired = str(beat.get("visual_type") or "video").casefold()
+        ranked = []
+        for order, (key, path) in enumerate(active_candidates):
+            searchable = f"{key} {os.path.basename(path)}".casefold()
+            tokens = set(re.findall(r"[a-z0-9]+", searchable))
+            score = len(query_words & tokens) * 4
+            if beat_id and beat_id in key.casefold():
+                score += 100
+            source_type = _visual_source_type(path)
+            if desired in {"video", "actual video"} and source_type == "still":
+                score -= 3
+            elif desired in {"still", "archival_image", "illustration", "map", "chart", "graphic"} and source_type == "still":
+                score += 2
+            if path in recent:
+                score -= 12
+            if path in beat_used:
+                score -= 1000
+            ranked.append((-score, order, path))
+        ranked.sort()
+        choice = ranked[0][2]
+        selected.append(choice)
+        used.add(choice)
+        beat_used.add(choice)
+        recent.append(choice)
+        recent = recent[-2:]
+        if len(used) == len(candidates):
+            used.clear()
+    return selected
+
+
 def _env_int(name: str, default: int) -> int:
     try:
         return int(os.environ.get(name, default))
@@ -213,11 +281,8 @@ def _resize_to_target(src: str) -> str:
 
 def _media_duration(path: str) -> float:
     cmd = [
-        _ffprobe(),
-        "-v", "error",
-        "-show_entries", "format=duration",
-        "-of", "default=noprint_wrappers=1:nokey=1",
-        path,
+        _ffprobe(), "-v", "error", "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1", path,
     ]
     out = subprocess.run(cmd, check=True, capture_output=True, text=True,
                          timeout=60, stdin=subprocess.DEVNULL).stdout.strip()
@@ -259,6 +324,41 @@ def _filtra_clip_leggibili(clip_files: list) -> tuple[list, dict]:
 def _concat_file_line(path: str) -> str:
     safe = os.path.abspath(path).replace("\\", "/").replace("'", "'\\''")
     return f"file '{safe}'\n"
+
+
+def _build_xfade_filter_graph(group_durations: list[float], total_duration: float) -> str:
+    if len(group_durations) < 2:
+        raise ValueError("xfade requires at least two visual groups")
+    filters = []
+    for index in range(len(group_durations)):
+        filters.append(
+            f"[{index}:v]settb=AVTB,setpts=PTS-STARTPTS,fps={OUTPUT_FPS},"
+            f"scale={OUTPUT_W}:{OUTPUT_H},format=yuv420p[v{index}]"
+        )
+
+    current = "[v0]"
+    elapsed = group_durations[0]
+    total_overlap = 0.0
+    for index in range(1, len(group_durations)):
+        overlap = min(0.30, group_durations[index - 1] * 0.25,
+                      group_durations[index] * 0.25)
+        if overlap < 1 / OUTPUT_FPS:
+            raise ValueError("adjacent visual group too short for a dissolve")
+        offset = max(0.0, elapsed - overlap)
+        next_label = f"[x{index}]"
+        filters.append(
+            f"{current}[v{index}]xfade=transition=fade:duration={overlap:.3f}:"
+            f"offset={offset:.3f}{next_label}"
+        )
+        current = next_label
+        elapsed += group_durations[index] - overlap
+        total_overlap += overlap
+
+    filters.append(
+        f"{current}tpad=stop_mode=clone:stop_duration={total_overlap:.3f},"
+        f"trim=duration={total_duration:.3f},setpts=PTS-STARTPTS[vout]"
+    )
+    return ";".join(filters)
 
 
 def _caption_filter(caption: str | None) -> str:
@@ -467,10 +567,30 @@ def _render_workers() -> int:
     return max(1, min(4, cpu // max(1, FFMPEG_THREADS)))
 
 
-def _render_segment_ffmpeg(src: str, dst: str, offset: float, duration: float, caption: str | None = None, src_duration: float | None = None) -> None:
+def _render_segment_ffmpeg(src: str, dst: str, offset: float, duration: float,
+                           caption: str | None = None, src_duration: float | None = None,
+                           motion: str = "") -> None:
     if src_duration is None:
         src_duration = _media_duration(src)
     vf = _caption_filter(caption)
+    source_type = _visual_source_type(src)
+    if motion in {"slow_push", "reveal_push"}:
+        step = ("0.00036" if motion == "reveal_push" else
+            "0.00024" if source_type == "still" else "0.00012")
+        transform = (
+            f"scale={int(OUTPUT_W * 1.10)}:{int(OUTPUT_H * 1.10)},"
+            f"zoompan=z='min(zoom+{step},1.04)':d=1:"
+            f"s={OUTPUT_W}x{OUTPUT_H}:fps={OUTPUT_FPS}"
+        )
+        vf = f"{transform},{vf}"
+    elif motion == "lateral_pan":
+        transform = (
+            f"scale={int(OUTPUT_W * 1.08)}:{int(OUTPUT_H * 1.08)},"
+            f"crop={OUTPUT_W}:{OUTPUT_H}:"
+            f"x='(in_w-out_w)*mod(n/{OUTPUT_FPS * max(duration, 1):.3f},1)':"
+            "y='(in_h-out_h)/2'"
+        )
+        vf = f"{transform},{vf}"
     if src_duration < duration:
         ingresso = ["-stream_loop", "-1", "-i", src, "-t", f"{duration:.3f}"]
     else:
@@ -534,7 +654,105 @@ def _filtro_loudnorm() -> str:
     return f"loudnorm=I={LOUDNESS_TARGET_LUFS}:TP=-1.5:LRA=11"
 
 
-def _mux_audio_ffmpeg(video_path: str, audio_path: str, output_path: str, music_path: str | None, duration: float) -> None:
+def _music_curve(events: list[dict], duration: float) -> str:
+    cues = []
+    for event in events:
+        beat = event.get("beat", {})
+        try:
+            intensity = min(1.0, max(0.0, float(beat.get("music_intensity", 0.4))))
+        except (TypeError, ValueError):
+            intensity = 0.4
+        start = max(0.0, float(event.get("start", 0.0)))
+        end = min(duration, float(event.get("end", duration)))
+        level = 0.35 + intensity * 1.15
+        beat_id = str(beat.get("id") or "")
+        if cues and cues[-1][3] == beat_id and abs(cues[-1][1] - start) < 0.01:
+            cues[-1] = (cues[-1][0], end, level, beat_id)
+        else:
+            cues.append((start, end, level, beat_id))
+
+    expression = "0.35"
+    for index in range(len(cues) - 1, -1, -1):
+        start, end, level, _ = cues[index]
+        previous = cues[index - 1][2] if index else 0.35
+        following = cues[index + 1][2] if index + 1 < len(cues) else 0.35
+        ramp = min(0.4, max(0.05, (end - start) / 3))
+        fade_in_end = min(end, start + ramp)
+        fade_out_start = max(start, end - ramp)
+        within = (
+            f"if(lt(t,{fade_in_end:.3f}),"
+            f"{previous:.3f}+({level:.3f}-{previous:.3f})*"
+            f"(t-{start:.3f})/{max(0.001, fade_in_end - start):.3f},"
+            f"if(lt(t,{fade_out_start:.3f}),{level:.3f},"
+            f"{level:.3f}+({following:.3f}-{level:.3f})*"
+            f"(t-{fade_out_start:.3f})/{max(0.001, end - fade_out_start):.3f}))"
+        )
+        expression = f"if(between(t,{start:.3f},{end:.3f}),{within},{expression})"
+    return expression
+
+
+def build_audio_filter_graph(duration: float, events: list[dict], music_index: int | None,
+                             sfx_specs: list[dict] | None = None,
+                             music_volume: float = 0.1) -> str:
+    """Return a local FFmpeg filter graph with voice-led ducking and safe peaks."""
+    filters = ["[1:a]anull[voice]"]
+    mix_labels = ["[voice]"]
+    if music_index is not None:
+        curve = _music_curve(events, duration)
+        filters.append(
+            f"[{music_index}:a]volume=eval=frame:volume='{music_volume:.4f}*({curve})'[music]"
+        )
+        filters.append(
+            "[music][voice]sidechaincompress=threshold=0.035:ratio=6:"
+            "attack=25:release=650:makeup=1[ducked]"
+        )
+        mix_labels.append("[ducked]")
+
+    for index, spec in enumerate(sfx_specs or []):
+        input_index = int(spec["input_index"])
+        start = max(0, int(float(spec.get("start", 0.0)) * 1000))
+        gain = min(0.5, max(0.0, float(spec.get("gain", 0.12))))
+        label = f"sfx{index}"
+        filters.append(
+            f"[{input_index}:a]volume={gain:.3f},afade=t=in:st=0:d=0.04,"
+            "afade=t=out:st=1.2:d=0.2,"
+            f"adelay={start}|{start}[{label}]"
+        )
+        mix_labels.append(f"[{label}]")
+
+    filters.append(
+        f"{''.join(mix_labels)}amix=inputs={len(mix_labels)}:duration=first:"
+        "dropout_transition=2[mixed]"
+    )
+    filters.append(f"[mixed]{_filtro_loudnorm()},alimiter=limit=0.8414[a]")
+    return ";".join(filters)
+
+
+def _resolve_sfx_cues(events: list[dict], audio_dir: str = "assets/custom/audio") -> list[dict]:
+    """Resolve optional cue names only to existing files in the local SFX folder."""
+    cues = []
+    for event in events:
+        value = event.get("beat", {}).get("sound_cue")
+        if isinstance(value, dict):
+            name = value.get("name") or value.get("kind") or value.get("file") or ""
+        elif isinstance(value, str):
+            name = value
+        else:
+            continue
+        slug = re.sub(r"[^a-zA-Z0-9_-]+", "_", os.path.splitext(os.path.basename(str(name).strip()))[0]).strip("_")
+        if not slug:
+            continue
+        path = next((os.path.join(audio_dir, slug + ext)
+                     for ext in (".wav", ".mp3", ".ogg", ".m4a")
+                     if os.path.isfile(os.path.join(audio_dir, slug + ext))), None)
+        if path:
+            cues.append({"path": path, "start": event.get("start", 0.0), "gain": 0.12})
+    return cues
+
+
+def _mux_audio_ffmpeg(video_path: str, audio_path: str, output_path: str,
+                      music_path: str | None, duration: float,
+                      timeline_events: list[dict] | None = None) -> None:
     # Senza questi parametri l'audio finale ereditava il formato del TTS
     # (mono 24 kHz, ~72 kb/s): il video usciva piu' piano e piu' povero di
     # qualunque altro sul canale.
@@ -544,7 +762,26 @@ def _mux_audio_ffmpeg(video_path: str, audio_path: str, output_path: str, music_
         "-ar", AUDIO_SAMPLE_RATE,
         "-ac", AUDIO_CHANNELS,
     ]
-    if music_path:
+    if timeline_events is not None:
+        sfx = _resolve_sfx_cues(timeline_events)
+        cmd = [_ffmpeg(), "-y", "-nostdin", "-i", video_path, "-i", audio_path]
+        music_index = None
+        if music_path:
+            music_index = 2
+            cmd += ["-stream_loop", "-1", "-i", music_path]
+        for cue in sfx:
+            cue["input_index"] = 2 + int(music_path is not None) + len(
+                [item for item in sfx if "input_index" in item]
+            )
+            cmd += ["-i", cue["path"]]
+        cmd += [
+            "-filter_complex",
+            build_audio_filter_graph(duration, timeline_events, music_index, sfx,
+                                     music_volume=_bg_volume()),
+            "-map", "0:v:0", "-map", "[a]", "-c:v", "copy",
+            *codifica_audio, "-shortest", "-movflags", "+faststart", output_path,
+        ]
+    elif music_path:
         cmd = [
             _ffmpeg(), "-y", "-nostdin",
             "-i", video_path,
@@ -582,11 +819,29 @@ def _mux_audio_ffmpeg(video_path: str, audio_path: str, output_path: str, music_
         raise RuntimeError(f"ffmpeg mux failed:\n{result.stderr[-2000:]}")
 
 
-def _monta_video_ffmpeg(audio_path: str, keywords: list, clip_paths: dict, output_path: str, mood: str = None, on_progress=None, custom_music: str = None, captions_text: str = None) -> None:
+def _monta_video_ffmpeg(audio_path: str, keywords: list, clip_paths: dict, output_path: str,
+                        mood: str = None, on_progress=None, custom_music: str = None,
+                        captions_text: str = None, visual_plan: list[dict] | None = None,
+                        max_duration: float | None = None,
+                        subtitle_cues: list[dict] | None = None) -> None:
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
-    total_duration = _media_duration(audio_path)
-    n_segments = int(total_duration / SEGMENT_DURATION) + 1
-    captions = _select_key_captions(captions_text or "", total_duration, n_segments)
+    source_duration = _media_duration(audio_path)
+    total_duration = min(source_duration, max_duration) if max_duration else source_duration
+    timeline_events = None
+    if visual_plan is not None:
+        from moduli.visual_plan import build_shot_timeline
+        timeline_events = build_shot_timeline(
+            captions_text or "", visual_plan, source_duration, max_duration,
+            subtitle_cues=subtitle_cues,
+        )
+        if not timeline_events:
+            raise RuntimeError("montaggio: il piano visuale non ha prodotto segmenti")
+        total_duration = timeline_events[-1]["end"]
+        n_segments = len(timeline_events)
+    else:
+        n_segments = int(total_duration / SEGMENT_DURATION) + 1
+    captions = ({} if visual_plan is not None else
+                _select_key_captions(captions_text or "", total_duration, n_segments))
     music_path = custom_music if custom_music and os.path.exists(custom_music) else _pick_music(mood)
     if music_path:
         print(f"[montaggio] BG music: {music_path} (mood={mood})", flush=True)
@@ -608,23 +863,42 @@ def _monta_video_ffmpeg(audio_path: str, keywords: list, clip_paths: dict, outpu
             "montaggio: nessuna clip leggibile — la cache e' stata svuotata o i "
             "download sono corrotti. Rilancia la pipeline con /forza."
         )
-    clip_sequence = _build_clip_sequence(
-        clip_files, n_segments,
-        prioritarie=_clip_prioritarie(keywords, clip_paths, clip_files))
+    clip_sequence = (
+        _select_timeline_clips(timeline_events, clip_paths, clip_files)
+        if timeline_events is not None else
+        _build_clip_sequence(
+            clip_files, n_segments,
+            prioritarie=_clip_prioritarie(keywords, clip_paths, clip_files))
+    )
     workers = _render_workers()
     print(f"[montaggio] Render segmenti: {workers} in parallelo", flush=True)
     with tempfile.TemporaryDirectory(prefix="render_", dir=os.path.dirname(output_path) or None) as tmpdir:
         lavori = []
         for i in range(n_segments):
-            seg_start = i * SEGMENT_DURATION
-            remaining = total_duration - seg_start
-            if remaining <= 0:
-                break
+            if timeline_events is not None:
+                event = timeline_events[i]
+                seg_start = event["start"]
+                segment_duration = event["duration"]
+                motion = str(event["beat"].get("motion") or "")
+                caption = event["beat"].get("overlay_text") if event["shot_index"] == 0 else None
+            else:
+                seg_start = i * SEGMENT_DURATION
+                remaining = total_duration - seg_start
+                if remaining <= 0:
+                    break
+                segment_duration = min(SEGMENT_DURATION, remaining)
+                motion = ""
+                caption = captions.get(i)
             clip_path = clip_sequence[i]
+            if _visual_source_type(clip_path) == "still":
+                source_offset = 0.0
+            elif motion == "static_hold":
+                source_offset = 0.0
+            else:
+                source_offset = seg_start + i * 0.73
             lavori.append((
                 i, clip_path, os.path.join(tmpdir, f"seg_{i:04d}.mp4"),
-                seg_start, min(SEGMENT_DURATION, remaining),
-                captions.get(i), durate.get(clip_path),
+                source_offset, segment_duration, caption, durate.get(clip_path), motion,
             ))
         segment_paths = [j[2] for j in lavori]
 
@@ -649,15 +923,15 @@ def _monta_video_ffmpeg(audio_path: str, keywords: list, clip_paths: dict, outpu
                 on_progress(pct, eta_str)
 
         if workers <= 1:
-            for _, src, dst, off, dur, cap, sdur in lavori:
-                _render_segment_ffmpeg(src, dst, off, dur, cap, sdur)
+            for _, src, dst, off, dur, cap, sdur, motion in lavori:
+                _render_segment_ffmpeg(src, dst, off, dur, cap, sdur, motion)
                 _avanza()
         else:
             from concurrent.futures import ThreadPoolExecutor, as_completed
             with ThreadPoolExecutor(max_workers=workers) as pool:
                 futures = {
-                    pool.submit(_render_segment_ffmpeg, src, dst, off, dur, cap, sdur): dst
-                    for _, src, dst, off, dur, cap, sdur in lavori
+                    pool.submit(_render_segment_ffmpeg, src, dst, off, dur, cap, sdur, motion): dst
+                    for _, src, dst, off, dur, cap, sdur, motion in lavori
                 }
                 for fut in as_completed(futures):
                     fut.result()  # rilancia il primo errore, annullando il render
@@ -668,21 +942,62 @@ def _monta_video_ffmpeg(audio_path: str, keywords: list, clip_paths: dict, outpu
         # concat e mux, e sembrava che il render si fosse piantato.
         if on_progress:
             on_progress(80, "unisco i segmenti")
-        list_path = os.path.join(tmpdir, "segments.txt")
-        with open(list_path, "w", encoding="utf-8") as f:
-            for path in segment_paths:
-                f.write(_concat_file_line(path))
-
         silent_video = os.path.join(tmpdir, "video_senza_audio.mp4")
-        subprocess.run(
-            [_ffmpeg(), "-y", "-nostdin", "-v", "error", "-f", "concat", "-safe", "0",
-             "-i", list_path, "-c", "copy", silent_video],
-            check=True, capture_output=True,
-            timeout=FFMPEG_TIMEOUT, stdin=subprocess.DEVNULL,
-        )
+
+        def _concat(paths: list[str], destination: str) -> None:
+            concat_list = destination + ".txt"
+            with open(concat_list, "w", encoding="utf-8") as handle:
+                for path in paths:
+                    handle.write(_concat_file_line(path))
+            subprocess.run(
+                [_ffmpeg(), "-y", "-nostdin", "-v", "error", "-f", "concat", "-safe", "0",
+                 "-i", concat_list, "-c", "copy", destination],
+                check=True, capture_output=True,
+                timeout=FFMPEG_TIMEOUT, stdin=subprocess.DEVNULL,
+            )
+
+        dissolve_at = [
+            index for index, event in enumerate(timeline_events or [])
+            if index > 0 and event["shot_index"] == 0
+            and event["beat"].get("transition") == "dissolve"
+        ]
+        if dissolve_at:
+            try:
+                edges = [0, *dissolve_at, len(segment_paths)]
+                groups = []
+                group_durations = []
+                for group_index, (start, end) in enumerate(zip(edges, edges[1:])):
+                    paths = segment_paths[start:end]
+                    if len(paths) == 1:
+                        group_path = paths[0]
+                    else:
+                        group_path = os.path.join(tmpdir, f"cut_group_{group_index:03d}.mp4")
+                        _concat(paths, group_path)
+                    groups.append(group_path)
+                    group_durations.append(sum(event["duration"]
+                                              for event in timeline_events[start:end]))
+
+                graph = _build_xfade_filter_graph(group_durations, total_duration)
+                codec = _codec_segmento()
+                command = [_ffmpeg(), "-y", "-nostdin"]
+                for group in groups:
+                    command += ["-i", group]
+                command += [
+                    "-filter_complex", graph, "-map", "[vout]", "-an",
+                    *_codec_args(codec), "-movflags", "+faststart", silent_video,
+                ]
+                subprocess.run(command, check=True, capture_output=True,
+                               timeout=FFMPEG_TIMEOUT, stdin=subprocess.DEVNULL)
+            except (OSError, ValueError, subprocess.CalledProcessError,
+                    subprocess.TimeoutExpired) as error:
+                print(f"[montaggio] Dissolve non disponibile ({error}); uso hard cut", flush=True)
+                _concat(segment_paths, silent_video)
+        else:
+            _concat(segment_paths, silent_video)
         if on_progress:
             on_progress(90, "audio e musica")
-        _mux_audio_ffmpeg(silent_video, audio_path, output_path, music_path, total_duration)
+        _mux_audio_ffmpeg(silent_video, audio_path, output_path, music_path, total_duration,
+                  timeline_events=timeline_events)
         if on_progress:
             on_progress(100, "fatto")
 
@@ -799,9 +1114,15 @@ def _overlay_captions_moviepy(video, captions_text: str | None,
         return video
 
 
-def monta_video(audio_path: str, keywords: list, clip_paths: dict, output_path: str, mood: str = None, on_progress=None, custom_music: str = None, captions_text: str = None) -> None:
-    if _FFMPEG_ONLY:
-        _monta_video_ffmpeg(audio_path, keywords, clip_paths, output_path, mood, on_progress, custom_music, captions_text)
+def monta_video(audio_path: str, keywords: list, clip_paths: dict, output_path: str,
+                mood: str = None, on_progress=None, custom_music: str = None,
+                captions_text: str = None, visual_plan: list[dict] | None = None,
+                max_duration: float | None = None,
+                subtitle_cues: list[dict] | None = None) -> None:
+    if _FFMPEG_ONLY or visual_plan is not None or max_duration is not None:
+        _monta_video_ffmpeg(audio_path, keywords, clip_paths, output_path, mood,
+                            on_progress, custom_music, captions_text, visual_plan,
+                            max_duration, subtitle_cues)
         return
 
     from moviepy import AudioFileClip, CompositeAudioClip, concatenate_videoclips, concatenate_audioclips

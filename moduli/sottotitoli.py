@@ -32,19 +32,33 @@ def _timestamp(secondi: float) -> str:
     return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
 
 
-def genera_srt(script: str, durata_audio: float, output_path: str) -> str | None:
-    """Scrive il file SRT e ne ritorna il percorso (None se input vuoto)."""
+def cue_da_script(script: str, durata_audio: float) -> list[dict]:
+    """Return the same word-weighted timings as SRT, in memory."""
     blocchi = _blocchi(script)
     if not blocchi or durata_audio <= 0:
-        return None
-    tot_parole = sum(len(b.split()) for b in blocchi)
-    righe = []
+        return []
+    tot_parole = sum(len(blocco.split()) for blocco in blocchi)
+    cues = []
     t = 0.0
-    for i, blocco in enumerate(blocchi, 1):
+    for blocco in blocchi:
         durata = durata_audio * len(blocco.split()) / tot_parole
         fine = min(t + durata, durata_audio)
-        righe.append(f"{i}\n{_timestamp(t)} --> {_timestamp(fine)}\n{blocco}\n")
+        cues.append({"start": t, "end": fine, "text": blocco})
         t = fine
+    return cues
+
+
+def genera_srt(script: str, durata_audio: float, output_path: str) -> str | None:
+    """Scrive il file SRT e ne ritorna il percorso (None se input vuoto)."""
+    cues = cue_da_script(script, durata_audio)
+    if not cues:
+        return None
+    righe = []
+    for i, cue in enumerate(cues, 1):
+        righe.append(
+            f"{i}\n{_timestamp(cue['start'])} --> {_timestamp(cue['end'])}\n"
+            f"{cue['text']}\n"
+        )
     with open(output_path, "w", encoding="utf-8") as f:
         f.write("\n".join(righe))
     return output_path
