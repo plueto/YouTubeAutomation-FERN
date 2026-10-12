@@ -1156,12 +1156,18 @@ def build_scene_plan(script: str, duration: float, *, audio_path: str | None = N
     ai_note = None
     if use_ai:
         planned, ai_note = _ai_direct(rows, cleaned)
-        if not planned:
-            raise RuntimeError("AI planning was requested but did not produce a valid coordinate-based plan. "
-                               + str(ai_note or "Unknown AI planning error")
-                               + ". Nothing was rendered with local fallback; rerun without --ai-plan to use local planning.")
-        rows = planned
-        source = "openrouter_ai_director"
+        if planned:
+            rows = planned
+            source = "openrouter_ai_director"
+        else:
+            # The local renderer is still the requested chalkboard style. An AI
+            # planning hiccup must not stop the preview or switch to stock footage.
+            source = "local_heuristic_director"
+            print(
+                "[chalkboard] AI direction unavailable; using the local chalkboard director. "
+                + str(ai_note or "Unknown AI planning error"),
+                flush=True,
+            )
     for row in rows:
         row["plan_source"] = source
     _validate_rows(rows, cleaned, duration)
