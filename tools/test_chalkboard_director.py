@@ -1,5 +1,7 @@
-"""Regression tests for the Passes 1-3 scene planner and its renderer contract."""
+"""Regression tests for the scene planner and its renderer contract."""
 from __future__ import annotations
+import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -98,6 +100,75 @@ def test_coordinate_action_schema() -> None:
     assert _sanitize_ai_actions(duplicate, title, labels) is None
 
 
+def test_compact_ai_direction_uses_local_chalk_geometry() -> None:
+    """AI chooses story beats, while local code keeps coordinate output compact and reliable."""
+    script = (
+        "A company made a bold promise, then quietly changed the incentives. "
+        "Customers saw a price on the front page, but the real costs appeared after signup. "
+        "The hidden score changed how the entire business made money."
+    )
+    rows = build_scene_plan(script, 12.5)["scenes"]
+    ai_scenes = []
+    for row in rows:
+        labels = row["labels"][:3]
+        if len(labels) < 2:
+            labels = labels + ["Key consequence"]
+        ai_scenes.append({
+            "scene": row["scene"],
+            "purpose": "Reveal the mechanism",
+            "composition": row["composition"],
+            "motif": row["motif"],
+            "title": f"Scene focus {row['scene']}",
+            "labels": labels,
+            "visual_metaphor": "A hidden mechanism changes the visible outcome",
+        })
+    content = json.dumps({"scenes": ai_scenes}).encode("utf-8")
+
+    class FakeResponse:
+        status = 200
+        def __enter__(self):
+            return self
+        def __exit__(self, *_args):
+            return False
+        def read(self):
+            return json.dumps({
+                "choices": [{
+                    "message": {"content": content.decode("utf-8")},
+                    "finish_reason": "stop",
+                }]
+            }).encode("utf-8")
+
+    old_key = os.environ.get("OPENROUTER_API_KEY")
+    old_urlopen = director_module.urllib.request.urlopen
+    captured = {}
+    def fake_urlopen(request, timeout=50):
+        captured["payload"] = json.loads(request.data.decode("utf-8"))
+        return FakeResponse()
+
+    try:
+        os.environ["OPENROUTER_API_KEY"] = "test-only-key"
+        director_module.urllib.request.urlopen = fake_urlopen
+        result, error = director_module._ai_direct(rows, script)
+    finally:
+        director_module.urllib.request.urlopen = old_urlopen
+        if old_key is None:
+            os.environ.pop("OPENROUTER_API_KEY", None)
+        else:
+            os.environ["OPENROUTER_API_KEY"] = old_key
+
+    assert error is None, error
+    assert result and len(result) == len(rows)
+    prompt = captured["payload"]["messages"][0]["content"]
+    assert "drawing_actions" not in prompt
+    assert captured["payload"]["max_tokens"] <= 2500
+    for row in result:
+        actions = row["drawing_actions"]
+        assert len(actions) >= 4
+        texts = [norm(a.get("text", "")) for a in actions if a["type"] == "text"]
+        assert {norm(x) for x in row["labels"]}.issubset(set(texts))
+        assert max(float(a["end"]) for a in actions) >= .78
+
+
 def test_ai_request_does_not_silently_fallback() -> None:
     original = director_module._ai_direct
     director_module._ai_direct = lambda rows, script: (None, "planned test failure")
@@ -128,12 +199,13 @@ def main() -> int:
     test_freeform_action_renderer(plan)
     test_coordinate_action_schema()
     test_ai_request_does_not_silently_fallback()
+    test_compact_ai_direction_uses_local_chalk_geometry()
     test_all_motifs()
     inventory = available_alignment_backends()
     assert isinstance(inventory.get("packages"), dict)
     print(f"PASS: {plan['scene_count']} contiguous beats; complete script, unique text, validated coordinate actions, and all {len(COMPOSITIONS)} legacy compositions.")
     print("PASS: freeform scene actions draw progressively across the beat and render to 1280x720.")
-    print("PASS: AI action coordinates, text uniqueness, margins, and no-silent-fallback gate.")
+    print("PASS: compact AI direction plus locally generated timed chalk geometry; no-silent-fallback gate.")
     print(f"PASS: all {len(MOTIFS)} chalk motifs render without errors.")
     print("PASS: timing provenance explicit; no alignment packages/models installed or downloaded by test.")
     return 0
