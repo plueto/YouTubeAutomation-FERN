@@ -657,9 +657,9 @@ def render_preview(
             for shot in candidate if isinstance(shot, dict)
         ]
         concept_patterns = {
-            "typing": re.compile(r"\\b(typing|typewriter|keyboard|keyboarding|data entry|hands typing)\\b"),
-            "meeting": re.compile(r"\\b(meeting room|boardroom|conference room|business meeting)\\b"),
-            "server_room": re.compile(r"\\b(server rack|server room|data center|server farm)\\b"),
+            "typing": re.compile(r"\b(typing|typewriter|keyboard|keyboarding|data entry|hands typing)\b"),
+            "meeting": re.compile(r"\b(meeting room|boardroom|conference room|business meeting)\b"),
+            "server_room": re.compile(r"\b(server rack|server room|data center|server farm)\b"),
         }
         repeated_families = [
             family for family, pattern in concept_patterns.items()
