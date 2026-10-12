@@ -295,19 +295,60 @@ def _board_background(width: int, height: int) -> Image.Image:
 
 def _draw_chalk_line(draw: ImageDraw.ImageDraw, p1: tuple[float, float], p2: tuple[float, float], progress: float,
                      color: str = CHALK, width: int = 3, seed: int = 0) -> None:
+    """Reveal a lightly irregular, chalk-like stroke with eased hand motion.
+
+    The path is deterministic for a given seed, so frames stay stable while the
+    visible endpoint advances. Small perpendicular imperfections break the
+    sterile vector-line look without adding a hand sprite or expensive effects.
+    """
     if progress <= 0:
         return
-    progress = min(1.0, progress)
+    progress = max(0.0, min(1.0, progress))
+    # Ease the drawing tip in and out instead of moving at a perfectly mechanical rate.
+    progress = progress * progress * (3.0 - 2.0 * progress)
     x1, y1 = p1
     x2, y2 = p2
-    end = (x1 + (x2 - x1) * progress, y1 + (y2 - y1) * progress)
-    rng = random.Random(seed)
-    # Two imperfect passes make the lines look dusty and hand-drawn.
-    draw.line((x1, y1, end[0], end[1]), fill=color, width=width)
-    if width >= 2 and progress > 0.04:
-        jitter = rng.choice([-2, -1, 1, 2])
-        draw.line((x1 + jitter, y1 - 1, end[0] + jitter, end[1] - 1), fill=color, width=1)
+    dx, dy = x2 - x1, y2 - y1
+    distance = math.hypot(dx, dy)
+    if distance < 0.5:
+        return
 
+    # A few stable points create a gently imperfect chalk stroke without a
+    # per-pixel loop. Keep the wobble subtle so diagrams remain legible.
+    segments = max(2, min(12, int(distance / 80.0)))
+    nx, ny = -dy / distance, dx / distance
+    rng = random.Random(seed)
+    points = [(x1, y1)]
+    for i in range(1, segments):
+        t = i / segments
+        wobble = rng.uniform(-1.35, 1.35)
+        points.append((x1 + dx * t + nx * wobble,
+                       y1 + dy * t + ny * wobble))
+    points.append((x2, y2))
+
+    remaining = distance * progress
+    visible = [points[0]]
+    for a, b in zip(points, points[1:]):
+        segment_length = math.dist(a, b)
+        if segment_length <= 0:
+            continue
+        if remaining >= segment_length:
+            visible.append(b)
+            remaining -= segment_length
+            continue
+        fraction = max(0.0, min(1.0, remaining / segment_length))
+        visible.append((a[0] + (b[0] - a[0]) * fraction,
+                        a[1] + (b[1] - a[1]) * fraction))
+        break
+
+    if len(visible) < 2:
+        return
+    draw.line(visible, fill=color, width=width)
+    # The offset second pass mimics chalk dust and imperfect pressure.
+    jitter = rng.choice([-1.2, -0.7, 0.7, 1.2])
+    ghost = [(x + nx * jitter, y + ny * jitter - 0.45) for x, y in visible]
+    if width >= 2 and progress > 0.04:
+        draw.line(ghost, fill=color, width=1)
 
 def _draw_polyline_progress(draw: ImageDraw.ImageDraw, points: list[tuple[int, int]], progress: float,
                             color: str = CHALK, width: int = 3, seed: int = 0) -> None:
