@@ -170,18 +170,17 @@ def test_compact_ai_direction_uses_local_chalk_geometry() -> None:
         assert max(float(a["end"]) for a in actions) >= .78
 
 
-def test_ai_request_does_not_silently_fallback() -> None:
+def test_ai_failure_explicitly_falls_back_to_chalkboard() -> None:
     original = director_module._ai_direct
     director_module._ai_direct = lambda rows, script: (None, "planned test failure")
     try:
-        try:
-            build_scene_plan("A small test script with enough words.", 3.0, use_ai=True)
-        except RuntimeError as exc:
-            assert "planned test failure" in str(exc)
-        else:
-            raise AssertionError("AI planning failure silently fell back to local mode")
+        plan = build_scene_plan("A small test script with enough words.", 3.0, use_ai=True)
     finally:
         director_module._ai_direct = original
+
+    assert plan["director"] == "local_heuristic_director"
+    assert plan["ai_director_note"] == "planned test failure"
+    assert plan["scenes"] and all(scene.get("drawing_actions") for scene in plan["scenes"])
 
 
 def test_all_motifs() -> None:
@@ -199,14 +198,14 @@ def main() -> int:
     test_renderer_all_compositions(plan)
     test_freeform_action_renderer(plan)
     test_coordinate_action_schema()
-    test_ai_request_does_not_silently_fallback()
+    test_ai_failure_explicitly_falls_back_to_chalkboard()
     test_compact_ai_direction_uses_local_chalk_geometry()
     test_all_motifs()
     inventory = available_alignment_backends()
     assert isinstance(inventory.get("packages"), dict)
     print(f"PASS: {plan['scene_count']} contiguous beats; complete script, unique text, validated coordinate actions, and all {len(COMPOSITIONS)} legacy compositions.")
     print("PASS: freeform scene actions draw progressively across the beat and render to 1280x720.")
-    print("PASS: compact AI direction plus locally generated timed chalk geometry; no-silent-fallback gate.")
+    print("PASS: compact AI direction plus locally generated timed chalk geometry; transparent local chalkboard fallback.")
     print(f"PASS: all {len(MOTIFS)} chalk motifs render without errors.")
     print("PASS: timing provenance explicit; no alignment packages/models installed or downloaded by test.")
     return 0
