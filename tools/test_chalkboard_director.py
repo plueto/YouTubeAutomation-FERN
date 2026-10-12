@@ -159,7 +159,8 @@ def test_compact_ai_direction_uses_local_chalk_geometry() -> None:
     assert error is None, error
     assert result and len(result) == len(rows)
     prompt = captured["payload"]["messages"][0]["content"]
-    assert "drawing_actions" not in prompt
+    assert "Do NOT output drawing_actions" in prompt
+    assert "x1,y1,x2,y2" not in prompt
     assert captured["payload"]["max_tokens"] <= 2500
     for row in result:
         actions = row["drawing_actions"]
