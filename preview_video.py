@@ -647,6 +647,35 @@ def render_preview(
         candidate = None
     if isinstance(candidate, dict) and isinstance(candidate.get("shots"), list):
         candidate = candidate["shots"]
+
+    # Cached plans can be syntactically distinct while depicting the same idea
+    # repeatedly. In offline/local preview mode, repair that by rebuilding a
+    # script-derived plan rather than silently showing the same kind of shot.
+    if isinstance(candidate, list):
+        query_texts = [
+            " ".join(str(shot.get("primary_query") or "").split()).casefold()
+            for shot in candidate if isinstance(shot, dict)
+        ]
+        concept_patterns = {
+            "typing": re.compile(r"\\b(typing|typewriter|keyboard|keyboarding|data entry|hands typing)\\b"),
+            "meeting": re.compile(r"\\b(meeting room|boardroom|conference room|business meeting)\\b"),
+            "server_room": re.compile(r"\\b(server rack|server room|data center|server farm)\\b"),
+        }
+        repeated_families = [
+            family for family, pattern in concept_patterns.items()
+            if sum(bool(pattern.search(query)) for query in query_texts) > 1
+        ]
+        if (len(query_texts) != len(candidate)
+                or len(set(query_texts)) != len(query_texts)
+                or repeated_families):
+            print(
+                "[preview] Repeated visual concept detected"
+                + (": " + ", ".join(repeated_families) if repeated_families else "")
+                + "; rebuilding a diverse local plan.",
+                flush=True,
+            )
+            candidate = None
+
     plan = deterministic_visual_plan(script) if not isinstance(candidate, list) else candidate
     assets = collect_local_assets(plan)
     if not assets:
