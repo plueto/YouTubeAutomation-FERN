@@ -163,12 +163,22 @@ def _strong(w: str, first: bool) -> bool:
 def captions(text: str, k: int, avoid: set[str] | None = None) -> list[str]:
     """Short (1-3 word) chalk captions, in spoken order, from the highest-information phrases."""
     avoid = {a.casefold() for a in (avoid or set())}
-    words = _tokens(text)
+    matches = list(_TOKEN.finditer(text))
+    words = [m.group(0) for m in matches]
     scored: list[tuple[float, int, int, str]] = []
     for n in (2, 3, 1):
         for i in range(0, len(words) - n + 1):
             seg = words[i:i + n]
             low = [w.casefold().strip("'’") for w in seg]
+            if len(set(low)) != len(low):
+                continue  # avoid awkward captions such as "FEEDBACK FEEDBACK"
+            # Do not form a phrase from the last word of one sentence and the
+            # first word of the next sentence (tokens alone lose this boundary).
+            if n > 1 and re.search(
+                r"[.!?;:\\n]",
+                text[matches[i].end():matches[i + n - 1].start()],
+            ):
+                continue
             if low[0] in _STOP or low[-1] in _STOP or low[0] in _WEAK or low[-1] in _WEAK:
                 continue
             if n == 3 and low[1] in _STOP and low[1] not in {"of", "for", "to", "from"}:
