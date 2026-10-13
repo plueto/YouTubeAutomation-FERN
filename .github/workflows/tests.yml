@@ -8,6 +8,7 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
 
@@ -16,11 +17,56 @@ jobs:
           python-version: "3.12"
           cache: pip
 
-      - name: Install ffmpeg
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - name: Install FFmpeg and local placeholder voice
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg espeak-ng
 
       - name: Install dependencies
         run: pip install -r requirements.txt
 
       - name: Run tests
         run: python -m unittest discover -s tests -v
+
+  preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install FFmpeg and local placeholder voice
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg espeak-ng
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Prepare local style-test narration
+        run: |
+          mkdir -p output/preview
+          python -c "from pathlib import Path; from moduli.chalk_voice import synthesize_espeak; script=Path('tests/fixtures/chalk_engine_style_test.txt').read_text(encoding='utf-8'); print(synthesize_espeak(script, 'output/preview/fern_chalk_style_test_narration.mp3'))"
+
+      - name: Render and QA chalkboard preview
+        run: |
+          python tools/make_chalk_preview.py \
+            --script tests/fixtures/chalk_engine_style_test.txt --words 200 \
+            --audio output/preview/fern_chalk_style_test_narration.mp3 \
+            --out output/preview/fern_chalk_style_test.mp4 \
+            --size 1280x720 --fps 24 --mood mysterious --force
+
+      - name: Upload preview, scene plan, report, and contact sheets
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fern-chalk-style-test
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            output/preview/fern_chalk_style_test.mp4
+            output/preview/fern_chalk_style_test.scene_plan.json
+            output/preview/fern_chalk_style_test.chalk_report.json
+            output/preview/fern_chalk_style_test_narration.mp3
+            output/preview/fern_chalk_style_test_narration.mp3.words.json
+            output/preview/qa/**

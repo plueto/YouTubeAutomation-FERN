@@ -4,6 +4,34 @@ All notable changes to TubeAssistant are documented here.
 
 ---
 
+## [Unreleased]
+
+### Added
+- **Chalk engine** (`moduli/chalk_*.py`) - the chalkboard video mode is rebuilt around a persistent,
+  incremental chalk renderer: grainy chalk on a textured slate board, hand-lettered text that is *written*
+  stroke by stroke (single-line stroke font), 57 procedural illustrations that get more detailed as they are
+  drawn (outline -> features -> hatching -> yellow/teal accent), SVG path import for new artwork, chalk dust,
+  an eraser that leaves ghost smudges, and a camera (pans between board pages, push-ins, close-ups, drift,
+  impact shake)
+- **Narration-driven direction**: every drawing is anchored to the spoken word that triggers it. Edge TTS word
+  timestamps are captured per chunk and saved as `<audio>.words.json`; scenes carry `word_times`
+- Story director (`chalk_story.py`): sentence-aware beats, 12 layouts (hero, duo, chain, versus, iceberg,
+  bignumber, network, timeline, evidence, funnel, statement, question), enumeration/number detection, captions,
+  hook "statement cards"; the AI director may supply an optional, validated `chalk` object
+- Pacing decisions in the composer: a drawing starts slightly ahead of its word when needed, then loses
+  hatching, decoration and secondary captions *before* the pen is hurried
+- Procedural sound design (`chalk_sound.py`): chalk scratch driven by real stroke speed, eraser swishes, impact
+  thumps and camera whooshes; music ducks under the narrator and swells on the big reveals
+- `tools/chalk_qa.py` (per-scene finished-state frames, contact sheets, emptiness/pacing/audio checks) and
+  `tools/make_chalk_preview.py` (script -> narration -> video -> QA in one command)
+- Dependencies: `numpy`, `opencv-python-headless`
+
+### Changed
+- `render_chalkboard_video` uses the chalk engine by default; `FERN_CHALK_ENGINE=legacy` (or a missing OpenCV)
+  keeps the previous Pillow renderer. `FERN_CHALK_BEAT_SECONDS` (default 7.5) sets the target beat length
+
+---
+
 ## [1.1.0] — 2026-09-12
 
 ### Added

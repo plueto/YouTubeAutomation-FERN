@@ -112,6 +112,10 @@ Side channels:
 - `moduli/canale.py` — channel-level metadata helpers.
 - `moduli/memoria.py` — long-term notes in `memoria_lungo_termine.json`.
 
+### Chalkboard mode (chalk engine)
+Chalkboard videos are rendered by `moduli/chalk_*.py` (see `docs/chalk_engine.md`); `FERN_CHALK_ENGINE=legacy`
+selects the old Pillow renderer in `chalkboard.py`. Preview + QA: `python tools/make_chalk_preview.py`.
+
 ## State & Checkpoints
 
 `state.json` is the single source of truth for the daemon. Hand-edits are valid control surface.

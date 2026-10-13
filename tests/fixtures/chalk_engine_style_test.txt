@@ -1,0 +1,11 @@
+You are being graded right now. Not by a teacher, not by a boss, and not by a credit bureau.
+
+You open a language model to draft a simple email. The answer appears in seconds, but the system has already weighed your words against patterns learned from countless examples.
+
+On the surface, you see a chat box and a finished sentence. Beneath the surface, a quiet calculation connects signals, estimates what you need, and chooses how to respond.
+
+One small signal changes the next response. A preference becomes feedback. Feedback changes the system again. The process forms a loop that is difficult to see from the outside.
+
+This is not science fiction. It is a chain of decisions hiding behind an ordinary screen. You can see the answer, but you cannot see every calculation that shaped it.
+
+And that raises one final question: if a system is quietly scoring what you ask, how would you know what the score means?

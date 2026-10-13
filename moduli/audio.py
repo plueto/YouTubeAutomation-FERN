@@ -62,17 +62,54 @@ def _split_chunks(text: str, max_words: int = CHUNK_WORDS) -> list[str]:
 
 
 def _tts_worker(text: str, output_path: str, voice: str) -> None:
+    """Synthesize one chunk. Also writes ``<output>.words.json`` with per-word timestamps
+    (seconds, relative to this chunk) when the installed edge-tts can report them."""
     import asyncio
+    import json
     import edge_tts
 
     async def _run():
-        communicate = edge_tts.Communicate(text, voice)
-        await asyncio.wait_for(
-            communicate.save(output_path),
-            timeout=TTS_TIMEOUT - 5,
-        )
+        try:
+            communicate = edge_tts.Communicate(text, voice, boundary="WordBoundary")
+        except TypeError:  # older edge-tts: no boundary option, no word timestamps
+            await asyncio.wait_for(
+                edge_tts.Communicate(text, voice).save(output_path),
+                timeout=TTS_TIMEOUT - 5,
+            )
+            return
+
+        words: list[dict] = []
+
+        async def _stream():
+            with open(output_path, "wb") as fh:
+                async for part in communicate.stream():
+                    if part["type"] == "audio":
+                        fh.write(part["data"])
+                    elif part["type"] == "WordBoundary":
+                        start = part["offset"] / 1e7
+                        words.append({"w": part["text"], "s": start, "e": start + part["duration"] / 1e7})
+
+        await asyncio.wait_for(_stream(), timeout=TTS_TIMEOUT - 5)
+        if words:
+            with open(output_path + ".words.json", "w", encoding="utf-8") as fh:
+                json.dump(words, fh)
 
     asyncio.run(_run())
+
+
+def _audio_duration(path: str) -> float | None:
+    """Duration in seconds via ffprobe (None if unavailable)."""
+    probe = shutil.which("ffprobe")
+    if not probe:
+        return None
+    try:
+        out = subprocess.run(
+            [probe, "-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", path],
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        return float(out)
+    except (subprocess.CalledProcessError, ValueError, OSError):
+        return None
 
 
 def _edge_tts_chunk(text: str, output_path: str, voice: str) -> bool:
@@ -321,6 +358,9 @@ def _edge_tts(text: str, output_path: str, voice: str) -> bool:
     )
 
     tmp_parts = []
+    all_words: list[dict] = []
+    clock = 0.0
+    words_complete = True
 
     try:
         for i, chunk in enumerate(chunks):
@@ -353,11 +393,38 @@ def _edge_tts(text: str, output_path: str, voice: str) -> bool:
                 )
                 return False
 
+            # word timestamps for this chunk, shifted by the audio that precedes it
+            side = tmp + ".words.json"
+            chunk_len = _audio_duration(tmp)
+            try:
+                with open(side, encoding="utf-8") as fh:
+                    import json as _json
+                    for w in _json.load(fh):
+                        all_words.append({"w": w["w"], "s": clock + w["s"], "e": clock + w["e"]})
+            except (OSError, ValueError, KeyError):
+                words_complete = False
+            if chunk_len is None:
+                words_complete = False
+            else:
+                clock += chunk_len
+
         _concat_audio(tmp_parts, output_path)
+        if words_complete and all_words:
+            try:
+                from moduli.chalk_voice import write_sidecar
+                write_sidecar(output_path, all_words, source=f"edge-tts WordBoundary ({voice})", precision="word")
+            except Exception as exc:  # timing is an enhancement; never fail narration over it
+                print(f"[TTS] sidecar timestamps non scritti: {exc}", flush=True)
         return True
 
     finally:
         for part in tmp_parts:
+            side = part + ".words.json"
+            if os.path.exists(side):
+                try:
+                    os.remove(side)
+                except OSError:
+                    pass
             if os.path.exists(part) and part != output_path:
                 try:
                     os.remove(part)

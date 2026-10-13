@@ -18,8 +18,8 @@ if str(ROOT) not in sys.path:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="FERN Chalkboard Pass 4: AI-directed action plans + local preview; no upload.")
-    parser.add_argument("--version", action="version", version="FERN Chalkboard Preview Pass 4 (coordinate drawing actions)")
+    parser = argparse.ArgumentParser(description="Render and QA a local FERN chalkboard preview; never uploads.")
+    parser.add_argument("--version", action="version", version="FERN Chalkboard Engine Preview")
     parser.add_argument("--duration", type=float, default=45.0, help="Preview length in seconds (default: 45).")
     parser.add_argument("--audio", default=str(ROOT / "output" / "narration.mp3"), help="Narration audio path.")
     parser.add_argument("--script", default=str(ROOT / "director_input" / "script.txt"), help="Matching narration script path.")
@@ -58,8 +58,26 @@ def main() -> int:
     duration = min(args.duration, full_duration)
     script = script_path.read_text(encoding="utf-8-sig", errors="replace").strip()
     words = script.split()
+    take = len(words)
     if full_duration > duration and words:
-        take = max(1, min(len(words), math.ceil(len(words) * duration / full_duration)))
+        # Use the last complete word before the requested preview boundary when
+        # the narration sidecar is available; otherwise estimate by duration.
+        aligned = None
+        try:
+            from moduli.chalk_voice import sidecar_alignment
+            aligned = sidecar_alignment(str(audio), script, full_duration)
+        except Exception:
+            aligned = None
+        if aligned and aligned.get("word_timings"):
+            eligible = [i for i, pair in enumerate(aligned["word_timings"])
+                        if float(pair[1]) <= duration and float(pair[1]) > float(pair[0])]
+            if eligible:
+                take = max(1, eligible[-1] + 1)
+                duration = min(duration, float(aligned["word_timings"][take - 1][1]))
+            else:
+                take = max(1, min(len(words), math.ceil(len(words) * duration / full_duration)))
+        else:
+            take = max(1, min(len(words), math.ceil(len(words) * duration / full_duration)))
         script = " ".join(words[:take])
 
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -76,6 +94,28 @@ def main() -> int:
             detail = (exc.stderr or str(exc))[-2000:]
             print(f"ERROR: couldn't trim narration for preview:\n{detail}", file=sys.stderr)
             return 2
+        # Keep the word timestamps attached to this trimmed temporary narration.
+        try:
+            from moduli.chalk_voice import read_sidecar, write_sidecar
+            source_sidecar = read_sidecar(str(audio))
+            if source_sidecar:
+                timed_words = []
+                for word in source_sidecar["words"]:
+                    start = max(0.0, float(word["s"]))
+                    if start >= duration:
+                        break
+                    end = min(duration, float(word["e"]))
+                    if end > start:
+                        timed_words.append({"w": word["w"], "s": start, "e": end})
+                if timed_words:
+                    write_sidecar(
+                        audio_preview, timed_words,
+                        source=source_sidecar["source"],
+                        precision=source_sidecar["precision"],
+                    )
+                    print(f"[preview] retained {len(timed_words)} speech-timing records", flush=True)
+        except Exception as exc:
+            print(f"[preview] timing sidecar unavailable; using estimated timing ({type(exc).__name__})", flush=True)
         def report(pct, eta):
             print(f"[{pct:3d}%] {eta}", flush=True)
         try:
@@ -101,15 +141,25 @@ def main() -> int:
     print(f"Planner used: {planner_used}")
     if planner_note:
         print(f"Planner note: {planner_note}")
-    qa_cmd = [sys.executable, str(ROOT / "tools" / "chalkboard_quality.py"), str(output), "--script", str(script_path), "--source-audio", str(audio)]
-    if args.ai_review:
-        qa_cmd.append("--ai-review")
-    if args.strict_quality:
-        qa_cmd.append("--strict")
+    engine_report_exists = output.with_suffix(".chalk_report.json").is_file()
+    if engine_report_exists:
+        qa_cmd = [sys.executable, str(ROOT / "tools" / "chalk_qa.py"), str(output)]
+    else:
+        qa_cmd = [sys.executable, str(ROOT / "tools" / "chalkboard_quality.py"), str(output),
+                  "--script", str(script_path), "--source-audio", str(audio)]
+        if args.ai_review:
+            qa_cmd.append("--ai-review")
+        if args.strict_quality:
+            qa_cmd.append("--strict")
     print("\n=== CHALKBOARD QUALITY CHECK ===", flush=True)
     qa_result = subprocess.run(qa_cmd, cwd=str(ROOT), check=False)
     if qa_result.returncode:
         print(f"Quality checker returned code {qa_result.returncode}. Inspect its report before continuing.", file=sys.stderr)
+    if engine_report_exists and args.ai_review:
+        review_cmd = [sys.executable, str(ROOT / "tools" / "chalkboard_quality.py"), str(output),
+                      "--script", str(script_path), "--source-audio", str(audio), "--ai-review"]
+        print("\n=== OPTIONAL AI VISUAL REVIEW ===", flush=True)
+        subprocess.run(review_cmd, cwd=str(ROOT), check=False)
     print("\nNothing was uploaded. Watch the full preview before rendering a longer version.")
     return qa_result.returncode if args.strict_quality else 0
 

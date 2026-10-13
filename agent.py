@@ -142,7 +142,7 @@ def _spiega_errore(err: str) -> str:
         return "ffmpeg non trovato: installalo e aggiungilo al PATH, oppure imposta FFMPEG_PATH nel .env."
     if "openverse" in e and ("401" in e or "403" in e or "unauthorized" in e):
         return "Openverse non è raggiungibile o ha rifiutato la richiesta."
-    if "no openverse results" in e or "nessuna clip" in e:
+    if "no openverse results" in e or "no pexels results" in e or "nessuna clip" in e:
         return "Nessuna clip trovata per le keyword generate: riprova con /forza (verranno generate keyword nuove)."
     if "429" in e or "ratelimit" in e or "rate limit" in e or "too many requests" in e:
         return "Servizio esterno in rate limit (troppe richieste): aspetta qualche minuto e usa /forza."

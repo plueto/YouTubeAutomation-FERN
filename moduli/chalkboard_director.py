@@ -494,7 +494,7 @@ def _timing_for_beats(beats: list[str], duration: float, alignment: dict[str, An
                 "end_seconds": round(max(boundaries[i] + 0.2, boundaries[i + 1]), 3),
                 "word_start_index": start_word,
                 "word_end_index": start_word + wc,
-                "timing_source": "local_asr_word_timestamps",
+                "timing_source": str(alignment.get("row_timing_source") or "local_asr_word_timestamps"),
                 "timing_confidence": round(float(alignment.get("coverage", 0.85)), 2),
             })
             start_word += wc
@@ -949,6 +949,12 @@ def _ai_direct(rows: list[dict[str, Any]], script: str) -> tuple[list[dict[str, 
         "scene": r["scene"], "excerpt": r["narration_excerpt"],
         "current_composition": r["composition"], "word_count": r["word_count"],
     } for r in rows]
+    try:
+        from moduli.chalk_composer import LAYOUTS as _LAYOUTS
+        from moduli.chalk_illustrations import LIBRARY as _LIB
+        CHALK_LAYOUTS, CHALK_MOTIFS = ", ".join(_LAYOUTS), ", ".join(sorted(_LIB))
+    except ImportError:
+        CHALK_LAYOUTS, CHALK_MOTIFS = "hero", "document"
     system = (
         "You are a high-end visual director for a narrated chalkboard documentary. "
         "Choose visual explanations that match each spoken beat; avoid generic filler, repeated layouts, "
@@ -958,7 +964,11 @@ def _ai_direct(rows: list[dict[str, Any]], script: str) -> tuple[list[dict[str, 
         "purpose (under 8 words), composition (one of: " + ", ".join(sorted(COMPOSITIONS)) + "), "
         "motif (one of: " + ", ".join(sorted(MOTIFS)) + "), title (2-4 words, distinct from labels), "
         "labels (array of 2-3 concise, unique labels, each 2-4 words and at most 5 words), "
-        "visual_metaphor (12 words maximum). Keep strings short. "
+        "visual_metaphor (12 words maximum), and optionally chalk: an object with layout (one of: " + CHALK_LAYOUTS + "), "
+        "motifs (1-4 of: " + CHALK_MOTIFS + "), labels (up to 3 captions of 1-3 words), title (2-4 words or empty), "
+        "anchors (object mapping motif0..motif3, label0..label3, title or number to an EXACT word or phrase copied from "
+        "that scene's excerpt - the spoken word that should trigger that drawing), camera (push, closeup or hold), "
+        "transition (pan, or erase for a hard topic break) and number (only if the beat states a figure). Keep strings short. "
         "Do NOT output drawing_actions, coordinates, drawing_sequence, markdown, explanations, or extra keys: "
         "FERN generates the timed chalk strokes locally. Avoid the same composition as the immediately previous "
         "scene when another composition fits the meaning. Use timeline only for real chronology, numbers only "
@@ -970,7 +980,7 @@ def _ai_direct(rows: list[dict[str, Any]], script: str) -> tuple[list[dict[str, 
         "temperature": 0.25,
         # Keep the response within free-provider output limits. The model chooses
         # the story grammar; the local renderer supplies all detailed coordinates.
-        "max_tokens": min(2500, 350 + 100 * len(rows)),
+        "max_tokens": min(4500, 400 + 230 * len(rows)),
         "reasoning_effort": "none",
         "response_format": {"type": "json_object"},
         "messages": [
@@ -1104,6 +1114,7 @@ def _ai_direct(rows: list[dict[str, Any]], script: str) -> tuple[list[dict[str, 
                 "drawing_sequence_text": seq or [x["action"] for x in _drawing_sequence(composition, labels, motif)],
                 "drawing_actions": drawing_actions,
                 "plan_source": "openrouter_ai_director",
+                "chalk_raw": item.get("chalk") if isinstance(item.get("chalk"), dict) else None,
             })
         # Validate the actual chosen plan before rendering it.
         _validate_rows(result, script, float(rows[-1]["end_seconds"]))
@@ -1119,8 +1130,43 @@ def _ai_direct(rows: list[dict[str, Any]], script: str) -> tuple[list[dict[str, 
         return None, f"AI Director failed ({type(exc).__name__}: {exc}); used local plans"
 
 
+def _attach_word_times(rows: list[dict[str, Any]], alignment: dict[str, Any] | None) -> None:
+    """Give every scene the spoken start/end of each of its words (absolute seconds)."""
+    if not (alignment and alignment.get("ok") and alignment.get("word_timings")):
+        return
+    times = alignment["word_timings"]
+    cursor = 0
+    for row in rows:
+        n = len(str(row.get("narration_excerpt", "")).split())
+        chunk = times[cursor:cursor + n]
+        cursor += n
+        if len(chunk) == n and all(t is not None for t in chunk):
+            row["word_times"] = [[round(float(a), 3), round(float(b), 3)] for a, b in chunk]
+            row["word_times_source"] = str(alignment.get("timing_source", "measured"))
+
+
+def _attach_chalk_plans(rows: list[dict[str, Any]]) -> None:
+    """Attach the chalk-engine story plan (layout, illustrations, captions, anchors) to each scene.
+
+    The local story planner always runs; an AI-supplied ``chalk_raw`` object may refine it but is
+    validated field by field (see ``chalk_story.sanitize_chalk``) and can never remove the fallback.
+    """
+    try:
+        from moduli.chalk_story import plan_chalk_scenes, sanitize_chalk
+    except ImportError:  # OpenCV/numpy missing: the legacy renderer does not need a chalk plan
+        for r in rows:
+            r.pop("chalk_raw", None)
+        return
+    raw = [r.pop("chalk_raw", None) for r in rows]
+    plan_chalk_scenes(rows)
+    for r, rw in zip(rows, raw):
+        if rw:
+            r["chalk"] = sanitize_chalk(rw, str(r.get("narration_excerpt", "")), r["chalk"])
+
+
 def build_scene_plan(script: str, duration: float, *, audio_path: str | None = None,
-                     use_ai: bool = False, align_audio: bool = False, aligner_model: str = "base") -> dict[str, Any]:
+                     use_ai: bool = False, align_audio: bool = False, aligner_model: str = "base",
+                     target_seconds: float | None = None, use_tts_timestamps: bool = True) -> dict[str, Any]:
     """Build a validated, timing-auditable scene plan for a single audio excerpt."""
     if not script or not script.strip():
         raise ValueError("Cannot direct an empty script")
@@ -1129,14 +1175,28 @@ def build_scene_plan(script: str, duration: float, *, audio_path: str | None = N
     cleaned = re.sub(r"\s+", " ", script).strip()
     total_words = len(cleaned.split())
     estimated_wpm = total_words * 60.0 / duration
-    target_seconds = 4.2
+    target_seconds_requested = bool(target_seconds)
+    target_seconds = float(target_seconds) if target_seconds else 4.2
     target_words = max(7, min(18, round(estimated_wpm * target_seconds / 60.0)))
-    beats = _segment_script(cleaned, target_words)
+    if target_seconds_requested:
+        from moduli.chalk_story import segment_beats
+        beats = segment_beats(cleaned, target_words)
+    else:
+        beats = _segment_script(cleaned, target_words)
     if not beats:
         raise ValueError("Could not split script into spoken beats")
     alignment = None
     alignment_note = None
-    if align_audio:
+    if audio_path and use_tts_timestamps:
+        # Word timestamps captured while the narration was synthesized beat any ASR guess.
+        try:
+            from moduli.chalk_voice import sidecar_alignment
+            alignment = sidecar_alignment(audio_path, cleaned, duration)
+        except ImportError:
+            alignment = None
+        if alignment:
+            alignment["row_timing_source"] = alignment["timing_source"]
+    if align_audio and not alignment:
         if not audio_path:
             alignment_note = "Audio alignment requested without an audio path; approximate timing used"
         else:
@@ -1170,6 +1230,8 @@ def build_scene_plan(script: str, duration: float, *, audio_path: str | None = N
             )
     for row in rows:
         row["plan_source"] = source
+    _attach_word_times(rows, alignment)
+    _attach_chalk_plans(rows)
     _validate_rows(rows, cleaned, duration)
     return {
         "schema_version": "1.0",
