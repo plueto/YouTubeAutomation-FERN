@@ -175,7 +175,7 @@ def captions(text: str, k: int, avoid: set[str] | None = None) -> list[str]:
             # Do not form a phrase from the last word of one sentence and the
             # first word of the next sentence (tokens alone lose this boundary).
             if n > 1 and re.search(
-                r"[.!?;:\\n]",
+                r"[.!?;:\n]",
                 text[matches[i].end():matches[i + n - 1].start()],
             ):
                 continue
