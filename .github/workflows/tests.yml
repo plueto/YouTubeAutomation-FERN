@@ -51,7 +51,7 @@ jobs:
       - name: Render and QA chalkboard preview
         run: |
           python tools/make_chalk_preview.py \
-            --script tests/fixtures/chalk_engine_style_test.txt \
+            --script tests/fixtures/chalk_engine_style_test.txt --words 200 \
             --audio output/preview/fern_chalk_style_test_narration.mp3 \
             --out output/preview/fern_chalk_style_test.mp4 \
             --size 1280x720 --fps 24 --mood mysterious --force
