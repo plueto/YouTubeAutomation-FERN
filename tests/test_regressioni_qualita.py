@@ -381,7 +381,17 @@ class LockAvvioTests(unittest.TestCase):
     def test_lock_esclusivo_vede_il_file_gia_bloccato(self):
         """Il PID da solo non bastava: dopo un kill duro il file resta orfano e
         un PID riciclato faceva credere che l'agente fosse ancora vivo."""
-        import agent
+        import importlib
+
+        # The agent validates its environment at import time; the lock test
+        # only needs a valid-shaped configuration and never contacts services.
+        with patch.dict(os.environ, {
+            "TELEGRAM_BOT_TOKEN": "test-token",
+            "TELEGRAM_CHAT_ID": "123",
+            "AI_SERVICE": "openrouter",
+            "OPENROUTER_API_KEY": "test-key",
+        }, clear=False):
+            agent = importlib.import_module("agent")
 
         with tempfile.TemporaryDirectory() as tmp:
             percorso = os.path.join(tmp, "prova.pid")
