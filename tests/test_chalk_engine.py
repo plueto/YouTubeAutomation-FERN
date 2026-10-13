@@ -12,6 +12,7 @@ import sys
 import tempfile
 import types
 import unittest
+from unittest.mock import patch
 import wave
 from pathlib import Path
 
@@ -242,9 +243,20 @@ class StoryTests(unittest.TestCase):
     def test_beats_follow_sentences_and_keep_the_hook_alone(self):
         beats = story.segment_beats(self.SCRIPT, 18)
         self.assertEqual(" ".join(beats).split(), self.SCRIPT.split())
+        self.assertEqual(" ".join(beats).casefold(), " ".join(self.SCRIPT.split()).casefold())
         self.assertEqual(beats[0], "You are being graded right now.")
         for b in beats:
             self.assertLessEqual(len(b.split()), 28)
+
+    def test_scene_plan_falls_back_if_story_segmentation_drops_script_text(self):
+        from moduli.chalkboard_director import build_scene_plan
+
+        with patch.object(story, "segment_beats", return_value=["You are being graded"]):
+            plan = build_scene_plan(
+                self.SCRIPT, 20.0, target_seconds=7.5, use_tts_timestamps=False,
+            )
+        reconstructed = " ".join(row["narration_excerpt"] for row in plan["scenes"])
+        self.assertEqual(reconstructed.casefold(), " ".join(self.SCRIPT.split()).casefold())
 
     def test_enumerations_and_numbers_are_detected(self):
         self.assertEqual([i.lower() for i in story.list_items("Not by a teacher, not by a boss, not by a credit bureau.")],
