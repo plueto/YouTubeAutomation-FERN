@@ -202,10 +202,15 @@ def captions(text: str, k: int, avoid: set[str] | None = None) -> list[str]:
             scored.append((score, i, i + n, phrase))
     scored.sort(key=lambda x: -x[0])
     chosen: list[tuple[int, int, str]] = []
+    chosen_phrases: set[str] = set()
     for score, a, b, phrase in scored:
+        norm_phrase = phrase.casefold()
+        if norm_phrase in chosen_phrases:
+            continue
         if any(not (b <= ca or a >= cb) for ca, cb, _ in chosen):
             continue
         chosen.append((a, b, phrase))
+        chosen_phrases.add(norm_phrase)
         if len(chosen) >= k:
             break
     chosen.sort()

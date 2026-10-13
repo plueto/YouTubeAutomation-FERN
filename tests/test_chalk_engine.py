@@ -261,6 +261,18 @@ class StoryTests(unittest.TestCase):
             self.assertLessEqual(len(c.split()), 3)
             self.assertNotIn(c.split()[0].casefold(), {"it", "all", "a", "that", "how", "much", "the"})
 
+    def test_captions_do_not_bridge_sentences_or_repeat_terms(self):
+        text = "A preference becomes feedback. Feedback changes the system again."
+        captions = story.captions(text, 3)
+        self.assertNotIn("FEEDBACK FEEDBACK", captions)
+        self.assertEqual(len({caption.casefold() for caption in captions}), len(captions))
+
+        # The final word before a period must not combine with the next
+        # sentence's first word to create a false visual concept.
+        captions = story.captions("The hidden score appears. The system changes the result.", 6)
+        self.assertNotIn("APPEARS SYSTEM", captions)
+        self.assertEqual(len({caption.casefold() for caption in captions}), len(captions))
+
     def test_plan_has_valid_varied_layouts(self):
         rows = [_row(i + 1, i * 6.0, (i + 1) * 6.0, t) for i, t in enumerate(story.segment_beats(self.SCRIPT, 18))]
         story.plan_chalk_scenes(rows)
