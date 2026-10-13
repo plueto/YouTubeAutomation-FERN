@@ -1012,6 +1012,20 @@ def render_chalkboard_video(audio_path: str, script_text: str, output_path: str,
     explicitly marked as measured local word timestamps or a text-based estimate.
     No external request is made unless use_ai_director=True.
     """
+    # The chalk engine (moduli/chalk_engine.py) is the default renderer. Set
+    # FERN_CHALK_ENGINE=legacy to use the original Pillow renderer below; it is also the
+    # automatic fallback when OpenCV is not installed.
+    if os.environ.get("FERN_CHALK_ENGINE", "chalk").strip().lower() != "legacy":
+        try:
+            from moduli.chalk_render import render_chalk_video
+        except ImportError as exc:
+            print(f"[chalkboard] chalk engine unavailable ({exc}); using the legacy renderer", flush=True)
+        else:
+            render_chalk_video(audio_path, script_text, output_path, mood=mood, on_progress=on_progress,
+                               custom_music=custom_music, use_ai_director=use_ai_director, align_audio=align_audio,
+                               aligner_model=aligner_model, scene_plan=scene_plan)
+            return
+
     from moduli.montaggio import (
         _ffmpeg, _media_duration, _mux_audio_ffmpeg, _pick_music,
         OUTPUT_W, OUTPUT_H, OUTPUT_FPS,
