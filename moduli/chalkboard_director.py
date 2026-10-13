@@ -1185,6 +1185,34 @@ def build_scene_plan(script: str, duration: float, *, audio_path: str | None = N
         beats = _segment_script(cleaned, target_words)
     if not beats:
         raise ValueError("Could not split script into spoken beats")
+
+    # Never continue with a storyboard that drops, duplicates, or reorders words.
+    # The new story-aware segmenter is intentionally stricter than the legacy
+    # whitespace splitter; if it fails this invariant on an unusual script,
+    # fall back to the token-preserving splitter instead of aborting the render.
+    expected_script = " ".join(cleaned.split())
+    reconstructed = " ".join(" ".join(str(beat).split()) for beat in beats)
+    if reconstructed.casefold() != expected_script.casefold():
+        print(
+            "[chalkboard] Story beat segmentation changed the narration; "
+            "falling back to the strict token-preserving segmenter.",
+            flush=True,
+        )
+        beats = _segment_script(cleaned, target_words)
+        reconstructed = " ".join(" ".join(str(beat).split()) for beat in beats)
+        if reconstructed.casefold() != expected_script.casefold():
+            expected_tokens, actual_tokens = expected_script.split(), reconstructed.split()
+            mismatch = next(
+                (i for i, (want, got) in enumerate(zip(expected_tokens, actual_tokens))
+                 if want.casefold() != got.casefold()),
+                min(len(expected_tokens), len(actual_tokens)),
+            )
+            want = expected_tokens[mismatch] if mismatch < len(expected_tokens) else "<end>"
+            got = actual_tokens[mismatch] if mismatch < len(actual_tokens) else "<end>"
+            raise ValueError(
+                "Both scene segmenters failed to preserve the script "
+                f"near token {mismatch + 1}: expected {want!r}, got {got!r}"
+            )
     alignment = None
     alignment_note = None
     if audio_path and use_tts_timestamps:
