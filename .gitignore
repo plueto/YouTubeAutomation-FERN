@@ -38,3 +38,5 @@ venv/
 .vscode/
 .idea/
 *.swp
+docs/qa/sound_lab_*/*.wav
+docs/qa/sound_lab_*/*.mp4

@@ -1,0 +1,296 @@
+{
+  "A_original": {
+    "gains_db": {},
+    "variant": "A_original",
+    "intelligibility_proxy": {
+      "narration_plus_effects": {
+        "stoi": 0.9781,
+        "estoi": 0.9261
+      },
+      "narration_plus_music": {
+        "stoi": 0.9279,
+        "estoi": 0.7924
+      },
+      "full_mix": {
+        "stoi": 0.9159,
+        "estoi": 0.7566
+      }
+    },
+    "speech_to_effects_db": {
+      "median": 17.78,
+      "p10": 4.94,
+      "frames": 403
+    },
+    "speech_to_music_db": {
+      "median": 13.06,
+      "p10": 0.27
+    },
+    "effects_rms_vs_voice_db": -13.78,
+    "stems": {
+      "chalk": {
+        "rms_vs_voice_db": -10.52,
+        "peak_vs_voice_rms_db": 6.89
+      },
+      "body": {
+        "rms_vs_voice_db": -31.64,
+        "peak_vs_voice_rms_db": -15.48
+      },
+      "tick": {
+        "rms_vs_voice_db": -15.43,
+        "peak_vs_voice_rms_db": -3.08
+      },
+      "erase": {
+        "rms_vs_voice_db": -18.49,
+        "peak_vs_voice_rms_db": -5.03
+      },
+      "thump": {
+        "rms_vs_voice_db": -13.34,
+        "peak_vs_voice_rms_db": -3.15
+      },
+      "tap": {
+        "rms_vs_voice_db": -15.89,
+        "peak_vs_voice_rms_db": -2.21
+      },
+      "whoosh": {
+        "rms_vs_voice_db": -19.6,
+        "peak_vs_voice_rms_db": -5.61
+      }
+    },
+    "effects_transient_prominence_db": 10.4,
+    "effects_peak_vs_voice_rms_db": 4.45,
+    "chalk_vs_music_db_in_chalk_band": 15.84,
+    "mix_loudness": {
+      "integrated_lufs": -21.1,
+      "range_lu": 1.7,
+      "true_peak_dbtp": -2.4
+    },
+    "mix_sample_peak_written_file": 0.76,
+    "mix_sum_peak_before_limiter": 1.004
+  },
+  "B_minus6dB": {
+    "gains_db": {
+      "chalk": -6,
+      "body": -6,
+      "tick": -6,
+      "erase": -6,
+      "whoosh": -6
+    },
+    "variant": "B_minus6dB",
+    "intelligibility_proxy": {
+      "narration_plus_effects": {
+        "stoi": 0.9913,
+        "estoi": 0.9688
+      },
+      "narration_plus_music": {
+        "stoi": 0.9279,
+        "estoi": 0.7924
+      },
+      "full_mix": {
+        "stoi": 0.9244,
+        "estoi": 0.7808
+      }
+    },
+    "speech_to_effects_db": {
+      "median": 23.78,
+      "p10": 10.58,
+      "frames": 403
+    },
+    "speech_to_music_db": {
+      "median": 13.06,
+      "p10": 0.27
+    },
+    "effects_rms_vs_voice_db": -18.27,
+    "stems": {
+      "chalk": {
+        "rms_vs_voice_db": -16.52,
+        "peak_vs_voice_rms_db": 0.89
+      },
+      "body": {
+        "rms_vs_voice_db": -37.64,
+        "peak_vs_voice_rms_db": -21.48
+      },
+      "tick": {
+        "rms_vs_voice_db": -21.43,
+        "peak_vs_voice_rms_db": -9.08
+      },
+      "erase": {
+        "rms_vs_voice_db": -24.49,
+        "peak_vs_voice_rms_db": -11.03
+      },
+      "thump": {
+        "rms_vs_voice_db": -13.34,
+        "peak_vs_voice_rms_db": -3.15
+      },
+      "tap": {
+        "rms_vs_voice_db": -15.89,
+        "peak_vs_voice_rms_db": -2.21
+      },
+      "whoosh": {
+        "rms_vs_voice_db": -25.6,
+        "peak_vs_voice_rms_db": -11.61
+      }
+    },
+    "effects_transient_prominence_db": 15.21,
+    "effects_peak_vs_voice_rms_db": -0.16,
+    "chalk_vs_music_db_in_chalk_band": 9.84,
+    "mix_loudness": {
+      "integrated_lufs": -21.2,
+      "range_lu": 1.8,
+      "true_peak_dbtp": -2.4
+    },
+    "mix_sample_peak_written_file": 0.76,
+    "mix_sum_peak_before_limiter": 0.985
+  },
+  "B2_all_minus6dB": {
+    "gains_db": {
+      "chalk": -6,
+      "body": -6,
+      "tick": -6,
+      "erase": -6,
+      "whoosh": -6,
+      "thump": -6,
+      "tap": -6
+    },
+    "variant": "B2_all_minus6dB",
+    "intelligibility_proxy": {
+      "narration_plus_effects": {
+        "stoi": 0.9924,
+        "estoi": 0.9716
+      },
+      "narration_plus_music": {
+        "stoi": 0.9279,
+        "estoi": 0.7924
+      },
+      "full_mix": {
+        "stoi": 0.9251,
+        "estoi": 0.782
+      }
+    },
+    "speech_to_effects_db": {
+      "median": 23.78,
+      "p10": 10.94,
+      "frames": 403
+    },
+    "speech_to_music_db": {
+      "median": 13.06,
+      "p10": 0.27
+    },
+    "effects_rms_vs_voice_db": -19.78,
+    "stems": {
+      "chalk": {
+        "rms_vs_voice_db": -16.52,
+        "peak_vs_voice_rms_db": 0.89
+      },
+      "body": {
+        "rms_vs_voice_db": -37.64,
+        "peak_vs_voice_rms_db": -21.48
+      },
+      "tick": {
+        "rms_vs_voice_db": -21.43,
+        "peak_vs_voice_rms_db": -9.08
+      },
+      "erase": {
+        "rms_vs_voice_db": -24.49,
+        "peak_vs_voice_rms_db": -11.03
+      },
+      "thump": {
+        "rms_vs_voice_db": -19.34,
+        "peak_vs_voice_rms_db": -9.15
+      },
+      "tap": {
+        "rms_vs_voice_db": -21.89,
+        "peak_vs_voice_rms_db": -8.21
+      },
+      "whoosh": {
+        "rms_vs_voice_db": -25.6,
+        "peak_vs_voice_rms_db": -11.61
+      }
+    },
+    "effects_transient_prominence_db": 10.4,
+    "effects_peak_vs_voice_rms_db": -1.55,
+    "chalk_vs_music_db_in_chalk_band": 9.84,
+    "mix_loudness": {
+      "integrated_lufs": -21.2,
+      "range_lu": 1.8,
+      "true_peak_dbtp": -2.4
+    },
+    "mix_sample_peak_written_file": 0.76,
+    "mix_sum_peak_before_limiter": 0.985
+  },
+  "C_tuned": {
+    "gains_db": {
+      "chalk": -6,
+      "body": -6,
+      "tick": -8,
+      "erase": -6,
+      "whoosh": -6,
+      "thump": -3,
+      "tap": -6
+    },
+    "variant": "C_tuned",
+    "intelligibility_proxy": {
+      "narration_plus_effects": {
+        "stoi": 0.9922,
+        "estoi": 0.971
+      },
+      "narration_plus_music": {
+        "stoi": 0.9279,
+        "estoi": 0.7924
+      },
+      "full_mix": {
+        "stoi": 0.9249,
+        "estoi": 0.7816
+      }
+    },
+    "speech_to_effects_db": {
+      "median": 23.81,
+      "p10": 10.94,
+      "frames": 403
+    },
+    "speech_to_music_db": {
+      "median": 13.06,
+      "p10": 0.27
+    },
+    "effects_rms_vs_voice_db": -19.49,
+    "stems": {
+      "chalk": {
+        "rms_vs_voice_db": -16.52,
+        "peak_vs_voice_rms_db": 0.89
+      },
+      "body": {
+        "rms_vs_voice_db": -37.64,
+        "peak_vs_voice_rms_db": -21.48
+      },
+      "tick": {
+        "rms_vs_voice_db": -23.43,
+        "peak_vs_voice_rms_db": -11.08
+      },
+      "erase": {
+        "rms_vs_voice_db": -24.49,
+        "peak_vs_voice_rms_db": -11.03
+      },
+      "thump": {
+        "rms_vs_voice_db": -16.34,
+        "peak_vs_voice_rms_db": -6.15
+      },
+      "tap": {
+        "rms_vs_voice_db": -21.89,
+        "peak_vs_voice_rms_db": -8.21
+      },
+      "whoosh": {
+        "rms_vs_voice_db": -25.6,
+        "peak_vs_voice_rms_db": -11.61
+      }
+    },
+    "effects_transient_prominence_db": 12.48,
+    "effects_peak_vs_voice_rms_db": -1.55,
+    "chalk_vs_music_db_in_chalk_band": 9.71,
+    "mix_loudness": {
+      "integrated_lufs": -21.2,
+      "range_lu": 1.8,
+      "true_peak_dbtp": -2.4
+    },
+    "mix_sample_peak_written_file": 0.76,
+    "mix_sum_peak_before_limiter": 0.985
+  }
+}

@@ -1,0 +1,28 @@
+{
+ "A_original": {},
+ "B_minus6dB": {
+  "chalk": -6,
+  "body": -6,
+  "tick": -6,
+  "erase": -6,
+  "whoosh": -6
+ },
+ "B2_all_minus6dB": {
+  "chalk": -6,
+  "body": -6,
+  "tick": -6,
+  "erase": -6,
+  "whoosh": -6,
+  "thump": -6,
+  "tap": -6
+ },
+ "C_tuned": {
+  "chalk": -6,
+  "body": -6,
+  "tick": -8,
+  "erase": -6,
+  "whoosh": -6,
+  "thump": -3,
+  "tap": -6
+ }
+}
