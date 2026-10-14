@@ -574,6 +574,27 @@ class SoundStemTests(unittest.TestCase):
         self.assertTrue(np.allclose(quiet[a:b][mask], loud[a:b][mask]))
         self.assertLess(float(np.abs(quiet).max()), float(np.abs(loud).max()))
 
+    def test_shipped_default_is_minus_6_db_and_never_boosts(self):
+        """Adopted from docs/qa/sound_lab_1 (B2); FERN_CHALK_SFX_DB may lower it further but can never raise it."""
+        from moduli import chalk_sound as cs
+        old = os.environ.pop("FERN_CHALK_SFX_DB", None)
+        try:
+            g = cs.default_gains()
+            self.assertTrue(all(abs(g.as_dict()[k] + 6.0) < 1e-9 for k in cs.STEM_ORDER))
+            self.assertEqual(g.music, 0.0)
+            os.environ["FERN_CHALK_SFX_DB"] = "0"
+            self.assertEqual(cs.default_gains().chalk, 0.0)
+            os.environ["FERN_CHALK_SFX_DB"] = "+4"
+            self.assertEqual(cs.default_gains().chalk, 0.0, "a positive value must not boost an effect")
+            os.environ["FERN_CHALK_SFX_DB"] = "-9"
+            self.assertEqual(cs.default_gains().tap, -9.0)
+            os.environ["FERN_CHALK_SFX_DB"] = "nonsense"
+            self.assertEqual(cs.default_gains().tap, -6.0)
+        finally:
+            os.environ.pop("FERN_CHALK_SFX_DB", None)
+            if old is not None:
+                os.environ["FERN_CHALK_SFX_DB"] = old
+
     @unittest.skipUnless(_have_ffmpeg(), "ffmpeg not installed")
     def test_gain_offsets_are_not_undone_by_the_reference_normalisation(self):
         """Regression guard for the experiment design: -6 dB on an effect must really lower the mix."""
@@ -582,7 +603,7 @@ class SoundStemTests(unittest.TestCase):
             t = np.arange(int(4 * cs.SR)) / cs.SR
             narr = (0.25 * np.sin(2 * np.pi * 180 * t) * (0.6 + 0.4 * np.sin(2 * np.pi * 3 * t))).astype(np.float32)
             cs.write_wav(Path(d) / "n.wav", narr)
-            base = cs.build_soundtrack(_golden_program(), Path(d) / "n.wav", None, 4.0, Path(d) / "a.wav")
+            base = cs.build_soundtrack(_golden_program(), Path(d) / "n.wav", None, 4.0, Path(d) / "a.wav", gains=cs.SfxGains())
             quiet = cs.build_soundtrack(_golden_program(), Path(d) / "n.wav", None, 4.0, Path(d) / "b.wav",
                                         gains=cs.SfxGains(chalk=-6, body=-6, tick=-6, erase=-6, whoosh=-6))
             self.assertLess(quiet["sfx_rms_vs_voice"], base["sfx_rms_vs_voice"] * 0.85)

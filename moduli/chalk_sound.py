@@ -111,6 +111,25 @@ class SfxGains:
         return {k: getattr(self, k) for k in (*STEM_ORDER, "music")}
 
 
+DEFAULT_SFX_DB = -6.0
+
+
+def default_gains() -> SfxGains:
+    """The shipped effect levels: every effect stem ``FERN_CHALK_SFX_DB`` dB (default -6) under the v1 level.
+
+    Chosen in docs/qa/sound_lab_1 (variant B2). Values above 0 are refused: this setting exists to *reduce*
+    effects, never to boost them. ``FERN_CHALK_SFX_DB=0`` restores the v1 mix exactly.
+    """
+    import os
+    raw = os.environ.get("FERN_CHALK_SFX_DB", "").strip()
+    try:
+        db = float(raw) if raw else DEFAULT_SFX_DB
+    except ValueError:
+        db = DEFAULT_SFX_DB
+    db = min(0.0, db)
+    return SfxGains(**{k: db for k in STEM_ORDER})
+
+
 def render_sfx_stems(program: Any, duration: float, seed: int = 5) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
     """Synthesize every effect as its own stem (mono float32, length ``duration``) so each can be tuned alone.
 
@@ -250,7 +269,7 @@ def build_soundtrack(program: Any, narration_path: str | Path, music_path: str |
     ref = sum_stems(stems)
     ref_rms = _rms(ref) if np.any(ref) else 1.0
     norm = 0.30 * narr_rms / ref_rms
-    gains = gains or SfxGains()
+    gains = gains or default_gains()
     sfx = sum_stems(stems, gains) * norm * sfx_gain
     # stop effects from stepping on the narrator's consonants: gentle ducking by voice activity
     va = voice_activity(narr)
