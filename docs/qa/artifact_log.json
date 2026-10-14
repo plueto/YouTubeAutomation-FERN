@@ -7,8 +7,8 @@
    "frame": "docs/qa/frames/baseline/scene04_end.png, scene05_end.png",
    "severity": "high (needs human review)",
    "cause": "_star(..., points=6) accents in chalk_illustrations.py (8 call sites) draw a six-pointed star; reads as a hexagram on a video about being 'scored'",
-   "fix": "",
-   "status": "open",
+   "fix": "all 8 six-point accents replaced by 4-point glints; _star() now raises on points==6 (commit pending in this branch); before/after sheet reviewed by eye",
+   "status": "fixed-unverified",
    "verification": {}
   },
   {

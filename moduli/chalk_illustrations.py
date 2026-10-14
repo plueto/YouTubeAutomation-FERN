@@ -109,6 +109,10 @@ def _bumpy(cx, cy, rx, ry, bumps=9, amp=0.12, a0=0, a1=360, seed=3) -> list[Pt]:
 
 
 def _star(cx, cy, r, points=8, inner=0.45, stage=3, color="yellow", weight=0.9) -> Part:
+    """A chalk glint. Six points are refused: a six-pointed star reads as a hexagram, which is a
+    loaded symbol on a video about being scored by a company (artifact log A-001)."""
+    if points == 6:
+        raise ValueError("six-pointed stars are not allowed as accents; use 4 (glint), 5 or 8 points")
     pts = []
     for i in range(points * 2 + 1):
         a = -math.pi / 2 + math.pi * i / points
@@ -152,7 +156,7 @@ def crowd() -> list[Part]:
         p.append(_ell(cx, cy - 0.12 * s, r, r * 1.1, stage=min(i, 1)))
         body = [(cx - 0.14 * s, cy + 0.42 * s), (cx - 0.14 * s, cy + 0.12 * s)] + arc(cx, cy + 0.12 * s, 0.14 * s, 0.1 * s, 180, 360, 8) + [(cx + 0.14 * s, cy + 0.42 * s)]
         p.append(_P(body, min(i, 1)))
-    p.append(_star(0.5, 0.1, 0.07, 6, 0.45, 3))
+    p.append(_star(0.5, 0.1, 0.07, 4, 0.26, 3))
     return p
 
 
@@ -175,7 +179,7 @@ def brain() -> list[Part]:
     for i, (x, y) in enumerate([(0.3, 0.34), (0.28, 0.52), (0.7, 0.34), (0.72, 0.52), (0.4, 0.66), (0.6, 0.66)]):
         p.append(_P(arc(x, y, 0.09, 0.06, 20 + i * 30, 250 + i * 30, 8), 1, weight=0.7))
     p += [_P([(0.44, 0.8), (0.42, 0.95), (0.58, 0.95), (0.56, 0.8)], 0, weight=0.9)]
-    p += [_star(0.86, 0.1, 0.06, 6, 0.4, 3)]
+    p += [_star(0.86, 0.1, 0.06, 4, 0.26, 3)]
     p += _hatch(outline[:12] + [(0.5, 0.48)], 0.045, 30, stage=2)
     return p
 
@@ -261,7 +265,7 @@ def magnifier() -> list[Part]:
     p = [_ell(0.4, 0.4, 0.3, 0.3), _P([(0.62, 0.62), (0.92, 0.92)], 0, weight=1.6)]
     p += [_ell(0.4, 0.4, 0.23, 0.23, 205, 285, stage=1, weight=0.6)]
     p += _hatch(arc(0.4, 0.4, 0.28, 0.28, 0, 360, 20), 0.05, 50, stage=2)[::2]
-    p += [_P([(0.62, 0.62), (0.92, 0.92)], 1, weight=0.5), _star(0.4, 0.4, 0.07, 6, 0.4, 3)]
+    p += [_P([(0.62, 0.62), (0.92, 0.92)], 1, weight=0.5), _star(0.4, 0.4, 0.07, 4, 0.26, 3)]
     return p
 
 
@@ -355,7 +359,7 @@ def funnel() -> list[Part]:
     for i, (x, y) in enumerate([(0.25, 0.1), (0.5, 0.05), (0.72, 0.12)]):
         p.append(_ell(x, y, 0.045, 0.045, stage=1))
         p.append(_P([(x, y + 0.07), (x, y + 0.14)], 1, weight=0.7))
-    p += [_P([(0.5, 0.94), (0.5, 1.0)], 3, "yellow", 1.2), _star(0.5, 0.97, 0.05, 6, 0.4, 3)]
+    p += [_P([(0.5, 0.94), (0.5, 1.0)], 3, "yellow", 1.2), _star(0.5, 0.97, 0.05, 4, 0.26, 3)]
     return p
 
 
@@ -599,7 +603,7 @@ def iceberg() -> list[Part]:
           _P([(0.3, 0.6), (0.4, 0.72)], 1, weight=0.6), _P([(0.74, 0.54), (0.66, 0.7)], 1, weight=0.6)]
     p += _hatch(under[:-1], 0.06, 45, stage=2)[::2]
     p += _hatch([(0.4, wl), (0.54, 0.1), (0.7, wl)], 0.07, 135, stage=2, weight=0.4)
-    p += [_P([(0.34, 0.76), (0.44, 0.67), (0.54, 0.77), (0.64, 0.69)], 3, "yellow", 1.0), _star(0.5, 0.86, 0.05, 6, 0.4, 3)]
+    p += [_P([(0.34, 0.76), (0.44, 0.67), (0.54, 0.77), (0.64, 0.69)], 3, "yellow", 1.0), _star(0.5, 0.86, 0.05, 4, 0.26, 3)]
     return p
 
 
@@ -683,7 +687,7 @@ def cross() -> list[Part]:
 
 def question() -> list[Part]:
     p = _glyph("?", 0.5, 0.5, 0.82, stage=0, color="chalk", weight=1.9, seed=4)
-    p += [_star(0.8, 0.14, 0.07, 6, 0.4, 3), _star(0.16, 0.84, 0.05, 6, 0.4, 3)]
+    p += [_star(0.8, 0.14, 0.07, 4, 0.26, 3), _star(0.16, 0.84, 0.05, 4, 0.26, 3)]
     return p
 
 
@@ -697,7 +701,7 @@ def crack() -> list[Part]:
     p = [_P([(0.5, 0.0), (0.44, 0.16), (0.56, 0.3), (0.42, 0.46), (0.58, 0.6), (0.46, 0.76), (0.52, 1.0)], 0, weight=1.2)]
     p += [_P([(0.56, 0.3), (0.74, 0.34), (0.82, 0.5)], 1, weight=0.8), _P([(0.42, 0.46), (0.24, 0.5), (0.16, 0.64)], 1, weight=0.8),
           _P([(0.58, 0.6), (0.72, 0.7), (0.78, 0.86)], 2, weight=0.7)]
-    p += [_star(0.5, 0.46, 0.08, 6, 0.4, 3)]
+    p += [_star(0.5, 0.46, 0.08, 4, 0.26, 3)]
     return p
 
 

@@ -105,6 +105,16 @@ class IllustrationTests(unittest.TestCase):
         allp = np.concatenate([p.pts for p in a])
         self.assertAlmostEqual(float(allp[:, 0].mean()), 900, delta=120)
 
+    def test_no_six_pointed_star_accents(self):
+        """Artifact A-001: six-pointed accents read as a hexagram; they are refused at the source."""
+        import re
+        src = Path(ill.__file__).read_text(encoding="utf-8")
+        self.assertEqual(re.findall(r"_star\([^)]*?,\s*6\s*,", src), [])
+        with self.assertRaises(ValueError):
+            ill._star(0.5, 0.5, 0.1, 6)
+        for pts in (4, 5, 8):
+            self.assertGreaterEqual(len(ill._star(0.5, 0.5, 0.1, pts).pts), 2 * pts)
+
     def test_svg_path_parser(self):
         lines = ill.svg_path_to_polylines("M0 0 L10 0 L10 10 Z")
         self.assertEqual(len(lines), 1)
