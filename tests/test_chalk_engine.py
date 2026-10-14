@@ -535,6 +535,61 @@ class SoundTests(unittest.TestCase):
             self.assertLess(rep["sfx_rms_vs_voice"], 0.5, "effects must sit under the narrator")
 
 
+# ------------------------------------------------------------ sound stems (tuning pass 1)
+GOLDEN_SFX = {"len": 176400, "peak": 1.5905708074569702, "window_energy": [144.0740654606755, 663.1351439024963, 682.8821693342309, 679.00758827799, 1226.9534809199213, 628.9660840054911, 0.6784715511179321, 869.9152532495273, 1196.8319233952852, 357.1601927927975, 189.19367156413696, 72.56208407181656, 304.3427761337052, 1.0381837927381166, 9.879656820437938e-10, 1.1978663530968765e-09], "report": {"chalk_strokes": 3, "chalk_seconds": 2.3, "erase_events": 1, "impacts": 2, "whooshes": 1}}
+
+
+def _golden_program() -> Program:
+    prog = Program(world_pages=1, duration=4.0)
+    prog.strokes = [Stroke(densify([(300, 300), (900, 340), (1500, 300)], 2.5), 0.2, 1.0, "chalk", 7),
+                    Stroke(densify([(300, 700), (1500, 700)], 2.5), 0.6, 0.8, "yellow", 6),
+                    Stroke(densify([(300, 500), (1500, 520)], 2.5), 1.8, 0.5, "chalk", 5)]
+    prog.cues = [{"t": 1.2, "kind": "impact", "gain": 1.0}, {"t": 1.8, "kind": "erase", "dur": 0.8},
+                 {"t": 2.4, "kind": "whoosh", "dur": 0.6, "gain": 0.8}, {"t": 3.0, "kind": "impact", "gain": 0.6}]
+    return prog
+
+
+class SoundStemTests(unittest.TestCase):
+    def test_default_gains_reproduce_the_v1_effects_track(self):
+        """Per-effect stems with 0 dB offsets must equal the v1 single-track output (frozen from commit 6adc4d9)."""
+        from moduli import chalk_sound as cs
+        sfx, rep = cs.render_sfx(_golden_program(), 4.0)
+        self.assertEqual(len(sfx), GOLDEN_SFX["len"])
+        self.assertAlmostEqual(float(np.abs(sfx).max()), GOLDEN_SFX["peak"], places=5)
+        windows = [float((x.astype(np.float64) ** 2).sum()) for x in np.array_split(sfx.astype(np.float64), 16)]
+        for got, want in zip(windows, GOLDEN_SFX["window_energy"]):
+            self.assertAlmostEqual(got, want, delta=max(abs(want) * 1e-6, 1e-6))
+        self.assertEqual(rep, GOLDEN_SFX["report"])
+
+    def test_gains_are_db_offsets_on_individual_stems(self):
+        from moduli import chalk_sound as cs
+        stems, _ = cs.render_sfx_stems(_golden_program(), 4.0)
+        g = cs.SfxGains(chalk=-6.0, tap=-3.0)
+        self.assertAlmostEqual(g.linear("chalk"), 0.5012, places=3)
+        quiet = cs.sum_stems(stems, g)
+        loud = cs.sum_stems(stems)
+        # only the chalk stem and the tap changed; the eraser stretch (1.8-2.6 s) is untouched
+        a, b = int(2.0 * cs.SR), int(2.4 * cs.SR)
+        mask = (np.abs(stems["chalk"][a:b]) < 1e-9) & (np.abs(stems["tap"][a:b]) < 1e-9)
+        self.assertTrue(np.allclose(quiet[a:b][mask], loud[a:b][mask]))
+        self.assertLess(float(np.abs(quiet).max()), float(np.abs(loud).max()))
+
+    @unittest.skipUnless(_have_ffmpeg(), "ffmpeg not installed")
+    def test_gain_offsets_are_not_undone_by_the_reference_normalisation(self):
+        """Regression guard for the experiment design: -6 dB on an effect must really lower the mix."""
+        from moduli import chalk_sound as cs
+        with tempfile.TemporaryDirectory() as d:
+            t = np.arange(int(4 * cs.SR)) / cs.SR
+            narr = (0.25 * np.sin(2 * np.pi * 180 * t) * (0.6 + 0.4 * np.sin(2 * np.pi * 3 * t))).astype(np.float32)
+            cs.write_wav(Path(d) / "n.wav", narr)
+            base = cs.build_soundtrack(_golden_program(), Path(d) / "n.wav", None, 4.0, Path(d) / "a.wav")
+            quiet = cs.build_soundtrack(_golden_program(), Path(d) / "n.wav", None, 4.0, Path(d) / "b.wav",
+                                        gains=cs.SfxGains(chalk=-6, body=-6, tick=-6, erase=-6, whoosh=-6))
+            self.assertLess(quiet["sfx_rms_vs_voice"], base["sfx_rms_vs_voice"] * 0.85)
+            self.assertEqual(quiet["gains_db"]["chalk"], -6)
+            self.assertEqual(base["gains_db"]["chalk"], 0)
+
+
 # --------------------------------------------------------------------------- end to end
 @unittest.skipUnless(voice.espeak_available(), "espeak-ng/ffmpeg not installed")
 class EndToEndTests(unittest.TestCase):
