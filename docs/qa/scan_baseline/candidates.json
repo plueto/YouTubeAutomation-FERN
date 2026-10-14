@@ -1,0 +1,134 @@
+[
+  {
+    "type": "caption_too_brief",
+    "scene": 1,
+    "t": 1.07,
+    "severity": "low",
+    "metric": "text:BEING GRADED is complete for 0.82s, needs ~1.00s (2 word(s))",
+    "frame": 25,
+    "frame_file": "frames/00_caption_too_brief_t1.1.png"
+  },
+  {
+    "type": "short_dwell",
+    "scene": 1,
+    "t": 1.79,
+    "severity": "medium",
+    "metric": "finished drawing visible for 0.10s before the camera/eraser moves",
+    "frame": 42,
+    "frame_file": "frames/01_short_dwell_t1.8.png"
+  },
+  {
+    "type": "caption_too_brief",
+    "scene": 2,
+    "t": 6.07,
+    "severity": "medium",
+    "metric": "text:CREDIT BUREAU is complete for 0.29s, needs ~1.00s (2 word(s))",
+    "frame": 145,
+    "frame_file": "frames/02_caption_too_brief_t6.1.png"
+  },
+  {
+    "type": "short_dwell",
+    "scene": 2,
+    "t": 6.07,
+    "severity": "low",
+    "metric": "finished drawing visible for 0.29s before the camera/eraser moves",
+    "frame": 145,
+    "frame_file": "frames/03_short_dwell_t6.1.png"
+  },
+  {
+    "type": "caption_out_of_sync",
+    "scene": 3,
+    "t": 10.43,
+    "severity": "medium",
+    "metric": "'LANGUAGE MODEL' finishes +2.83s from the word 'LANGUAGE' (tts_phrase_boundaries_interpolated timing)",
+    "frame": 250,
+    "frame_file": "frames/04_caption_out_of_sync_t10.4.png"
+  },
+  {
+    "type": "short_dwell",
+    "scene": 3,
+    "t": 11.42,
+    "severity": "low",
+    "metric": "finished drawing visible for 0.38s before the camera/eraser moves",
+    "frame": 274,
+    "frame_file": "frames/05_short_dwell_t11.4.png"
+  },
+  {
+    "type": "caption_out_of_sync",
+    "scene": 5,
+    "t": 25.25,
+    "severity": "medium",
+    "metric": "'DANGEROUS' finishes +2.77s from the word 'DANGEROUS' (tts_phrase_boundaries_interpolated timing)",
+    "frame": 605,
+    "frame_file": "frames/06_caption_out_of_sync_t25.2.png"
+  },
+  {
+    "type": "caption_too_brief",
+    "scene": 6,
+    "t": 28.48,
+    "severity": "low",
+    "metric": "text:NOT SCIENCE FICTION is complete for 0.80s, needs ~1.25s (3 word(s))",
+    "frame": 683,
+    "frame_file": "frames/07_caption_too_brief_t28.5.png"
+  },
+  {
+    "type": "short_dwell",
+    "scene": 6,
+    "t": 29.15,
+    "severity": "medium",
+    "metric": "finished drawing visible for 0.13s before the camera/eraser moves",
+    "frame": 699,
+    "frame_file": "frames/08_short_dwell_t29.1.png"
+  },
+  {
+    "type": "caption_too_brief",
+    "scene": 7,
+    "t": 38.03,
+    "severity": "medium",
+    "metric": "text:INVISIBLE SCAFFOLD is complete for 0.57s, needs ~1.00s (2 word(s))",
+    "frame": 912,
+    "frame_file": "frames/09_caption_too_brief_t38.0.png"
+  },
+  {
+    "type": "caption_out_of_sync",
+    "scene": 7,
+    "t": 33.93,
+    "severity": "medium",
+    "metric": "'REINFORCEMENT LEARNING' finishes +2.77s from the word 'REINFORCEMENT' (tts_phrase_boundaries_interpolated timing)",
+    "frame": 814,
+    "frame_file": "frames/10_caption_out_of_sync_t33.9.png"
+  },
+  {
+    "type": "caption_out_of_sync",
+    "scene": 7,
+    "t": 35.6,
+    "severity": "medium",
+    "metric": "'HUMAN PREFERENCE' finishes +2.83s from the word 'HUMAN' (tts_phrase_boundaries_interpolated timing)",
+    "frame": 854,
+    "frame_file": "frames/11_caption_out_of_sync_t35.6.png"
+  },
+  {
+    "type": "caption_out_of_sync",
+    "scene": 7,
+    "t": 38.03,
+    "severity": "medium",
+    "metric": "'INVISIBLE SCAFFOLD' finishes +3.85s from the word 'INVISIBLE' (tts_phrase_boundaries_interpolated timing)",
+    "frame": 912,
+    "frame_file": "frames/12_caption_out_of_sync_t38.0.png"
+  },
+  {
+    "type": "caption_out_of_sync",
+    "scene": 8,
+    "t": 45.37,
+    "severity": "medium",
+    "metric": "'SEE' finishes +3.28s from the word 'SEE' (tts_phrase_boundaries_interpolated timing)",
+    "frame": 1088,
+    "frame_file": "frames/13_caption_out_of_sync_t45.4.png"
+  },
+  {
+    "type": "six_pointed_star",
+    "severity": "high",
+    "metric": "8 _star(...) accent calls use 6 points (hexagram); visible as the yellow accent on several illustrations",
+    "frame": null
+  }
+]
