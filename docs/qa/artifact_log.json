@@ -17,8 +17,8 @@
    "frame": "docs/qa/frames/baseline/sync_evidence_baseline.png; docs/qa/scan_baseline/candidates.json",
    "severity": "high (FAIL: verified synchronization defect)",
    "cause": "one pen; layout order draws the big illustration before the caption; an anchor can only delay an element, so captions finish 2.8-3.9s after their spoken word (6 captions > 1.8s)",
-   "fix": "",
-   "status": "open",
+   "fix": "composer._order: anchored elements in spoken-word order, unanchored fill idle gaps (commit 'pen follows spoken-word order'); program-level measure: captions >1.8 s late 6 -> 1, median offset 1.20 -> 0.82 s",
+   "status": "fixed-unverified",
    "verification": {}
   },
   {
@@ -92,6 +92,16 @@
     "evidence": "final mix: nan=0, peak 0.861, 0 clipped samples (spectrogram analysed)",
     "result": "verified by measurement + test (historical)"
    }
+  },
+  {
+   "id": "R-001",
+   "found": "v2a render @ 29.2s (scene 6 finished frame); logged 2026-10-13",
+   "frame": "docs/qa/frames/compare/v2a_vs_baseline_2.png (scene 6, right): last letter of NOT SCIENCE FICTION unfinished",
+   "severity": "medium (regression introduced by the A-002 change)",
+   "cause": "title had no anchor (director anchored it to 'NOT', narration says \"isn't\") while the gear was anchored to the late word 'fiction'; first version of the new scheduler let late-anchored decoration jump ahead of main content",
+   "fix": "free element goes first if it delays the anchored one by <= 0.35 s or has higher importance; strict regression test (fails when the rule is removed - mutation-checked)",
+   "status": "fixed-unverified",
+   "verification": {}
   }
  ]
 }

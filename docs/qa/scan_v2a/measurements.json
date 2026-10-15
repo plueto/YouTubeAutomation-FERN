@@ -1,0 +1,377 @@
+{
+  "video": "output/v2a/preview.mp4",
+  "checks": [
+    {
+      "check": "video decodes completely",
+      "status": "PASS",
+      "detail": "1142 frames decoded (1280x720 @ 24 fps)"
+    },
+    {
+      "check": "content stays clear of the frame border (static camera)",
+      "status": "PASS",
+      "detail": "no ink in the border band outside pans"
+    },
+    {
+      "check": "no unexplained single-frame jumps",
+      "status": "PASS",
+      "detail": "largest global luminance step 1.00 levels (threshold 3.0); pan windows excluded, erase windows excluded"
+    },
+    {
+      "check": "text is large enough to read",
+      "status": "PASS",
+      "detail": "all scenes met the criterion"
+    },
+    {
+      "check": "captions stay visible long enough to read",
+      "status": "WARNING",
+      "detail": "3 candidate(s)"
+    },
+    {
+      "check": "captions do not overlap drawings",
+      "status": "PASS",
+      "detail": "all scenes met the criterion"
+    },
+    {
+      "check": "content keeps 3.5% clear of the frame edge on screen",
+      "status": "PASS",
+      "detail": "all scenes met the criterion"
+    },
+    {
+      "check": "finished drawings get at least 0.5s of dwell",
+      "status": "WARNING",
+      "detail": "4 candidate(s)"
+    },
+    {
+      "check": "captions finish within 1.8s of their spoken word",
+      "status": "WARNING",
+      "detail": "1 candidate(s)"
+    },
+    {
+      "check": "no visually frozen stretch over 2s",
+      "status": "PASS",
+      "detail": "none"
+    },
+    {
+      "check": "accent marks avoid hexagram shapes",
+      "status": "PASS",
+      "detail": "none"
+    }
+  ],
+  "scenes": [
+    {
+      "scene": 1,
+      "start": 0.0,
+      "end": 2.089,
+      "duration": 2.09,
+      "layout": "statement",
+      "first_stroke": 0.25,
+      "last_stroke_end": 1.79,
+      "finished_dwell_s": 0.1,
+      "pen_busy_fraction": 0.54,
+      "pen_speedup": 1.3,
+      "anchor_pull": 0.0,
+      "pacing": [
+        "detail->2",
+        "detail->1",
+        "dropped underline"
+      ],
+      "strokes": 32
+    },
+    {
+      "scene": 2,
+      "start": 2.089,
+      "end": 6.559,
+      "duration": 4.47,
+      "layout": "chain",
+      "first_stroke": 2.439,
+      "last_stroke_end": 6.07,
+      "finished_dwell_s": 0.29,
+      "pen_busy_fraction": 0.59,
+      "pen_speedup": 1.5,
+      "anchor_pull": 1.8,
+      "pacing": [
+        "detail->2",
+        "dropped importance<=1"
+      ],
+      "strokes": 76
+    },
+    {
+      "scene": 3,
+      "start": 6.559,
+      "end": 12.005,
+      "duration": 5.45,
+      "layout": "bignumber",
+      "first_stroke": 7.122,
+      "last_stroke_end": 11.42,
+      "finished_dwell_s": 0.38,
+      "pen_busy_fraction": 0.64,
+      "pen_speedup": 1.2,
+      "anchor_pull": 0.9,
+      "pacing": [],
+      "strokes": 67
+    },
+    {
+      "scene": 4,
+      "start": 12.005,
+      "end": 22.156,
+      "duration": 10.15,
+      "layout": "iceberg",
+      "first_stroke": 12.405,
+      "last_stroke_end": 20.03,
+      "finished_dwell_s": 1.92,
+      "pen_busy_fraction": 0.4,
+      "pen_speedup": 1.0,
+      "anchor_pull": 0.0,
+      "pacing": [],
+      "strokes": 76
+    },
+    {
+      "scene": 5,
+      "start": 22.156,
+      "end": 27.289,
+      "duration": 5.13,
+      "layout": "question",
+      "first_stroke": 22.506,
+      "last_stroke_end": 25.22,
+      "finished_dwell_s": 1.87,
+      "pen_busy_fraction": 0.35,
+      "pen_speedup": 1.0,
+      "anchor_pull": 0.0,
+      "pacing": [],
+      "strokes": 38
+    },
+    {
+      "scene": 6,
+      "start": 27.289,
+      "end": 29.475,
+      "duration": 2.19,
+      "layout": "statement",
+      "first_stroke": 27.754,
+      "last_stroke_end": 29.22,
+      "finished_dwell_s": 0.06,
+      "pen_busy_fraction": 0.53,
+      "pen_speedup": 1.6,
+      "anchor_pull": 1.8,
+      "pacing": [
+        "detail->2",
+        "detail->1",
+        "dropped underline",
+        "pen x1.6"
+      ],
+      "strokes": 32
+    },
+    {
+      "scene": 7,
+      "start": 29.475,
+      "end": 38.801,
+      "duration": 9.33,
+      "layout": "network",
+      "first_stroke": 29.825,
+      "last_stroke_end": 37.49,
+      "finished_dwell_s": 1.11,
+      "pen_busy_fraction": 0.57,
+      "pen_speedup": 1.2,
+      "anchor_pull": 0.0,
+      "pacing": [],
+      "strokes": 147
+    },
+    {
+      "scene": 8,
+      "start": 38.801,
+      "end": 47.569,
+      "duration": 8.77,
+      "layout": "duo",
+      "first_stroke": 39.201,
+      "last_stroke_end": 44.1,
+      "finished_dwell_s": 3.27,
+      "pen_busy_fraction": 0.4,
+      "pen_speedup": 1.0,
+      "anchor_pull": 0.0,
+      "pacing": [],
+      "strokes": 62
+    }
+  ],
+  "captions": [
+    {
+      "scene": 1,
+      "caption": "BEING GRADED",
+      "letters_per_s": 13.4,
+      "writing_s": 0.82,
+      "starts_at": 0.25,
+      "ends_at": 1.07,
+      "word_at": 0.47,
+      "end_minus_word_s": 0.6,
+      "word_timing": "tts_phrase_boundaries_interpolated"
+    },
+    {
+      "scene": 2,
+      "caption": "TEACHER",
+      "letters_per_s": 15.4,
+      "writing_s": 0.46,
+      "starts_at": 3.03,
+      "ends_at": 3.49,
+      "word_at": 2.87,
+      "end_minus_word_s": 0.62,
+      "word_timing": "tts_phrase_boundaries_interpolated"
+    },
+    {
+      "scene": 2,
+      "caption": "BOSS",
+      "letters_per_s": 22.0,
+      "writing_s": 0.18,
+      "starts_at": 4.06,
+      "ends_at": 4.24,
+      "word_at": 4.2,
+      "end_minus_word_s": 0.05,
+      "word_timing": "tts_phrase_boundaries_interpolated"
+    },
+    {
+      "scene": 2,
+      "caption": "CREDIT BUREAU",
+      "letters_per_s": 16.9,
+      "writing_s": 0.71,
+      "starts_at": 5.36,
+      "ends_at": 6.07,
+      "word_at": 5.33,
+      "end_minus_word_s": 0.75,
+      "word_timing": "tts_phrase_boundaries_interpolated"
+    },
+    {
+      "scene": 3,
+      "caption": "LANGUAGE MODEL",
+      "letters_per_s": 16.3,
+      "writing_s": 0.8,
+      "starts_at": 7.12,
+      "ends_at": 7.92,
+      "word_at": 7.6,
+      "end_minus_word_s": 0.32,
+      "word_timing": "tts_phrase_boundaries_interpolated"
+    },
+    {
+      "scene": 3,
+      "caption": "FIVE MINUTES",
+      "letters_per_s": 15.1,
+      "writing_s": 0.73,
+      "starts_at": 7.9,
+      "ends_at": 8.63,
+      "word_at": 9.26,
+      "end_minus_word_s": -0.62,
+      "word_timing": "tts_phrase_boundaries_interpolated"
+    },
+    {
+      "scene": 3,
+      "caption": "5 MINUTES",
+      "letters_per_s": 14.4,
+      "writing_s": 0.55,
+      "starts_at": 8.67,
+      "ends_at": 9.23
+    },
+    {
+      "scene": 4,
+      "caption": "WHAT YOU SEE",
+      "letters_per_s": 12.3,
+      "writing_s": 0.81,
+      "starts_at": 14.63,
+      "ends_at": 15.44
+    },
+    {
+      "scene": 4,
+      "caption": "SILENT CALCULATION",
+      "letters_per_s": 16.2,
+      "writing_s": 1.05,
+      "starts_at": 18.48,
+      "ends_at": 19.53,
+      "word_at": 18.78,
+      "end_minus_word_s": 0.75,
+      "word_timing": "tts_phrase_boundaries_interpolated"
+    },
+    {
+      "scene": 5,
+      "caption": "DANGEROUS",
+      "letters_per_s": 12.7,
+      "writing_s": 0.71,
+      "starts_at": 24.52,
+      "ends_at": 25.22,
+      "word_at": 22.48,
+      "end_minus_word_s": 2.74,
+      "word_timing": "tts_phrase_boundaries_interpolated"
+    },
+    {
+      "scene": 6,
+      "caption": "NOT SCIENCE FICTION",
+      "letters_per_s": 19.6,
+      "writing_s": 0.87,
+      "starts_at": 28.35,
+      "ends_at": 29.22
+    },
+    {
+      "scene": 7,
+      "caption": "REINFORCEMENT LEARNING",
+      "letters_per_s": 13.8,
+      "writing_s": 1.52,
+      "starts_at": 30.86,
+      "ends_at": 32.38,
+      "word_at": 31.16,
+      "end_minus_word_s": 1.22,
+      "word_timing": "tts_phrase_boundaries_interpolated"
+    },
+    {
+      "scene": 7,
+      "caption": "HUMAN PREFERENCE",
+      "letters_per_s": 13.8,
+      "writing_s": 1.09,
+      "starts_at": 33.34,
+      "ends_at": 34.43,
+      "word_at": 32.77,
+      "end_minus_word_s": 1.66,
+      "word_timing": "tts_phrase_boundaries_interpolated"
+    },
+    {
+      "scene": 7,
+      "caption": "INVISIBLE SCAFFOLD",
+      "letters_per_s": 16.2,
+      "writing_s": 1.05,
+      "starts_at": 34.91,
+      "ends_at": 35.96,
+      "word_at": 34.18,
+      "end_minus_word_s": 1.78,
+      "word_timing": "tts_phrase_boundaries_interpolated"
+    },
+    {
+      "scene": 8,
+      "caption": "SCORE",
+      "letters_per_s": 13.2,
+      "writing_s": 0.38,
+      "starts_at": 40.72,
+      "ends_at": 41.1,
+      "word_at": 39.5,
+      "end_minus_word_s": 1.6,
+      "word_timing": "tts_phrase_boundaries_interpolated"
+    },
+    {
+      "scene": 8,
+      "caption": "SEE",
+      "letters_per_s": 13.3,
+      "writing_s": 0.22,
+      "starts_at": 43.0,
+      "ends_at": 43.23,
+      "word_at": 42.09,
+      "end_minus_word_s": 1.13,
+      "word_timing": "tts_phrase_boundaries_interpolated"
+    },
+    {
+      "scene": 8,
+      "caption": "CANNOT APPEAL",
+      "letters_per_s": 14.6,
+      "writing_s": 0.82,
+      "starts_at": 43.27,
+      "ends_at": 44.1,
+      "word_at": 43.2,
+      "end_minus_word_s": 0.9,
+      "word_timing": "tts_phrase_boundaries_interpolated"
+    }
+  ],
+  "fps": 24,
+  "frames": 1142,
+  "frame_diff_median": 0.015
+}

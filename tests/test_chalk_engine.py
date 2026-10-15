@@ -404,6 +404,12 @@ class ComposerTests(unittest.TestCase):
         # a short filler that does fit before the first word is still drawn first
         tiny = el("tiny", None, 0.2)
         self.assertEqual([e.tag for e in _order([tiny, cap], 0.0, 1.0)], ["tiny", "cap"])
+        # main content (importance 3) is not deferred behind decoration (importance 1) anchored to a late word
+        title = el("title", None, 1.2)
+        title.importance = 3
+        deco = el("deco", 1.0, 0.5)             # deadline 0.7 s: the 1.2 s title cannot fit before it
+        deco.importance = 1
+        self.assertEqual([e.tag for e in _order([title, deco], 0.0, 1.0)], ["title", "deco"])
         # anchored elements keep spoken order whatever the layout order was
         self.assertEqual([e.tag for e in _order([later, cap], 0.0, 1.0)], ["cap", "later"])
 

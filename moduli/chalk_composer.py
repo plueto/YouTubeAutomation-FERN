@@ -568,8 +568,11 @@ def _order(els: list[Element], t_first: float, k: float) -> list[Element]:
             deadline = anchored[0].anchor - anchored[0].lead
             if deadline <= pen + 0.02:
                 e = anchored.pop(0)
-            elif free and pen + (free[0].nominal_duration() + 0.04) / k <= deadline:
-                e = free.pop(0)                      # fits in the gap before the next word
+            elif free and (pen + (free[0].nominal_duration() + 0.04) / k <= deadline + 0.35
+                           or free[0].importance > anchored[0].importance):
+                # fits in the gap before the next word (a 0.35 s slip is tolerated), or is simply more
+                # important than the decoration waiting for its word - main content is never deferred
+                e = free.pop(0)
             else:
                 e = anchored.pop(0)                  # nothing fits: wait for the word
         else:
