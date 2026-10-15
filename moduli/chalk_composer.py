@@ -554,12 +554,39 @@ def _reduce_detail(spec: SceneSpec, detail: int) -> list[Element]:
     return els
 
 
+def _order(els: list[Element], t_first: float, k: float) -> list[Element]:
+    """Pen order. Anchored elements are drawn in the order their words are spoken; unanchored
+    elements (secondary drawings, decoration) fill the pen's idle gaps instead of blocking a word
+    that is about to be said. Without this, a big unanchored drawing placed first by the layout
+    pushed every later caption seconds behind its word (artifact A-002)."""
+    anchored = sorted((e for e in els if e.anchor is not None), key=lambda e: e.anchor - e.lead)
+    free = [e for e in els if e.anchor is None]
+    out: list[Element] = []
+    pen = t_first
+    while anchored or free:
+        if anchored:
+            deadline = anchored[0].anchor - anchored[0].lead
+            if deadline <= pen + 0.02:
+                e = anchored.pop(0)
+            elif free and pen + (free[0].nominal_duration() + 0.04) / k <= deadline:
+                e = free.pop(0)                      # fits in the gap before the next word
+            else:
+                e = anchored.pop(0)                  # nothing fits: wait for the word
+        else:
+            e = free.pop(0)
+        out.append(e)
+        start = max(pen + e.gap / k, (e.anchor - e.lead) if e.anchor is not None else pen)
+        pen = start + (e.nominal_duration() + 0.04) / k
+    return out
+
+
 def _schedule(els: list[Element], t_first: float, k: float = 1.0, t_last: float | None = None,
               max_pull: float = 0.0) -> tuple[list[tuple[Element, float]], float]:
-    """One-pen schedule. An anchor normally only *delays* an element (never reorders it);
-    ``k`` is the pen speed-up factor. With ``max_pull`` > 0 an element anchored too late to
-    finish may start up to that many seconds *ahead* of its word - a hand that draws just
-    before the narrator says it. Returns ([(element, start)], time the pen lifts)."""
+    """One-pen schedule in word order (see ``_order``). ``k`` is the pen speed-up factor. With
+    ``max_pull`` > 0 an element anchored too late to finish may start up to that many seconds *ahead*
+    of its word - a hand that draws just before the narrator says it. Returns ([(element, start)],
+    time the pen lifts)."""
+    els = _order(els, t_first, k)
     durs = [e.nominal_duration() / k + 0.04 / k for e in els]
     latest = [1e9] * len(els)
     if max_pull > 0 and t_last is not None:

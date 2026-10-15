@@ -390,6 +390,23 @@ class ComposerTests(unittest.TestCase):
         self.assertGreaterEqual(t_word, row["start_seconds"])
         self.assertLessEqual(t_word, row["end_seconds"])
 
+    def test_captions_are_not_blocked_by_unanchored_drawings(self):
+        """Artifact A-002: a big unanchored drawing placed first by the layout delayed every caption by seconds."""
+        from moduli.chalk_composer import Element, Path as CPath, _order
+
+        def el(tag, anchor, secs):
+            pts = np.stack([np.linspace(0, 1000, 60), np.zeros(60)], axis=1).astype(np.float32)
+            return Element("illus", [CPath(pts, speed=1000 / secs)], anchor, 0.3, 0.0, False, tag)
+
+        big, cap, later = el("big", None, 2.0), el("cap", 1.0, 0.5), el("later", 4.0, 0.5)
+        self.assertGreater(big.nominal_duration(), 1.5)          # fixture sanity: it cannot fit before the word
+        self.assertEqual([e.tag for e in _order([big, cap, later], 0.0, 1.0)], ["cap", "big", "later"])
+        # a short filler that does fit before the first word is still drawn first
+        tiny = el("tiny", None, 0.2)
+        self.assertEqual([e.tag for e in _order([tiny, cap], 0.0, 1.0)], ["tiny", "cap"])
+        # anchored elements keep spoken order whatever the layout order was
+        self.assertEqual([e.tag for e in _order([later, cap], 0.0, 1.0)], ["cap", "later"])
+
     def test_close_up_never_crops_the_scene(self):
         """Regression: a close-up pushed in so far that captions and half a drawing were cut off."""
         plan = self._plan()
