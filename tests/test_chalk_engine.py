@@ -143,6 +143,65 @@ class IllustrationTests(unittest.TestCase):
         self.assertEqual(ill.motifs_for_text("zzzz qqqq", 3), [])
 
 
+# --------------------------------------------------- scene-specific compositions (opt-in)
+class SceneArtTests(unittest.TestCase):
+    SCENES = {"rejected_judges": {"judge0": "teacher", "judge1": "boss", "judge2": "credit"},
+              "two_dials": {"gauge": "dangerous", "valve": "effort", "person": "on you"},
+              "frosted_score": {"card": "score", "eye": "assigns", "pane": "never", "person": "see", "stamp": "appeal", "grade": "exists"}}
+    TEXT = {"rejected_judges": "Not by a teacher, not by a boss, not by a credit bureau.",
+            "two_dials": "how dangerous you might be, and how much effort the model should spend on you.",
+            "frosted_score": "And the score it assigns you? You will never see it. You cannot appeal it. You can barely even prove it exists."}
+
+    def _plan(self, art, seconds):
+        row = _row(1, 0.0, seconds, self.TEXT[art], {"layout": "hero", "title": "", "motifs": ["document"], "labels": [],
+                                                      "anchors": self.SCENES[art], "art": art, "camera": "hold", "transition": "pan", "detail": 3})
+        return {"duration_seconds": seconds, "scenes": [row]}
+
+    def test_each_composition_builds_inside_the_page_and_fits_its_beat(self):
+        from moduli.chalk_composer import ART
+        for art, secs in (("rejected_judges", 4.5), ("two_dials", 5.1), ("frosted_score", 8.8)):
+            self.assertIn(art, ART)
+            prog = compose_program(self._plan(art, secs), seed=3)
+            meta = prog.meta["scenes"][0]
+            self.assertTrue(meta["fits"], (art, meta["pacing"]))
+            self.assertLessEqual(meta["pen_speedup"], 1.5, art)
+            allp = np.concatenate([s.pts for s in prog.strokes])
+            self.assertGreaterEqual(float(allp[:, 0].min()), 0.04 * PAGE_W, art)
+            self.assertLessEqual(float(allp[:, 0].max()), 0.96 * PAGE_W, art)
+            self.assertLessEqual(float(allp[:, 1].max()), 0.96 * PAGE_H, art)
+            self.assertLessEqual(max(s.t1 for s in prog.strokes), secs - 0.05, art)
+
+    def test_compositions_are_never_chosen_automatically(self):
+        """Broad application is out of scope: the director and the lexicon must not select them."""
+        for name in ("gradebook", "orgchart", "score_dial", "danger_gauge", "silhouette", "ration_valve", "frosted_pane", "sealed_card", "stamp_final"):
+            self.assertIn(name, ill.LIBRARY)
+            self.assertNotIn(name, ill.KEYWORDS)
+        rows = [_row(1, 0, 6.0, self.TEXT["two_dials"])]
+        story.plan_chalk_scenes(rows)
+        self.assertNotIn("art", rows[0]["chalk"])
+
+    def test_occlusion_hides_only_what_is_behind_the_foreground(self):
+        line = ill.Part(np.array([[0.0, 0.5], [1.0, 0.5]], np.float32))
+        box = [(0.4, 0.3), (0.6, 0.3), (0.6, 0.7), (0.4, 0.7)]
+        pieces = ill._occlude([line], box)
+        self.assertEqual(len(pieces), 2)
+        self.assertLess(float(pieces[0].pts[:, 0].max()), 0.41)
+        self.assertGreater(float(pieces[1].pts[:, 0].min()), 0.59)
+        self.assertEqual(len(ill._occlude([ill.Part(np.array([[0.0, 0.1], [1.0, 0.1]], np.float32))], box)), 1)
+
+    def test_foreground_figure_really_hides_the_frost(self):
+        from moduli.chalk_scene_art import frosted_score
+        from moduli.chalk_composer import SceneSpec
+        spec = SceneSpec(index=0, t0=0, t1=8.8, layout="hero", title="", motifs=["document"], labels=[], anchors={}, seed=5)
+        els, _focus, _fi = frosted_score(spec)
+        pane = next(e for e in els if e.tag == "illus:frosted_pane")
+        fig = next(e for e in els if e.tag == "illus:silhouette")
+        head_c = np.array([610 + 0 * 560, 690 + (0.3 - 0.5) * 560])      # centre of the figure's head, world px
+        pts = np.concatenate([p.pts for p in pane.paths])
+        self.assertEqual(int((np.hypot(pts[:, 0] - head_c[0], pts[:, 1] - head_c[1]) < 70).sum()), 0, "frost must stop at the head")
+        self.assertTrue(fig.paths)
+
+
 # ------------------------------------------------------------------------------ engine
 def _tiny_program(seconds: float = 2.0) -> Program:
     prog = Program(world_pages=1, duration=seconds)
@@ -187,6 +246,36 @@ class EngineTests(unittest.TestCase):
         self.assertGreater(len(covered), 100)
         self.assertGreater(float(covered.std()), 12.0, "stroke density should vary (grain)")
         self.assertLess(float((covered > 250).mean()), 0.9, "a chalk line is never perfectly solid")
+
+    def test_dashed_stroke_lifts_the_pen_and_keeps_its_phase_across_frames(self):
+        """A 60/40 px pattern painted over many frames must stay a regular pattern (rounded caps add ~7 px per dash)."""
+        def runs(dash):
+            prog = Program(world_pages=1, duration=2.0)
+            prog.strokes.append(Stroke(densify([(200, 400), (1700, 400)], 2.5), 0.1, 1.2, "chalk", 7, dryness=0.15, dash=dash))
+            prog.camera = [CamKey(0, PAGE_W / 2, PAGE_H / 2, 1.0)]
+            eng = ChalkEngine(prog, 320, 180, 12, dust=False)
+            t = 0.0
+            while t < 1.6:                                        # many small increments, like a real render
+                eng.render(t)
+                t += 1 / 24
+            row = eng.ink_a[398:403, 600:1700].max(axis=0) > 40  # skip the stroke's soft start
+            out, cur, n = [], bool(row[0]), 0
+            for v in row:
+                if bool(v) == cur:
+                    n += 1
+                else:
+                    out.append((cur, n))
+                    cur, n = bool(v), 1
+            return [(c, k) for c, k in out]                      # the final partial run is dropped
+        dashed = runs((60.0, 40.0))
+        on = [k for c, k in dashed if c]
+        off = [k for c, k in dashed if not c]
+        self.assertGreaterEqual(len(on), 9)
+        self.assertAlmostEqual(float(np.median(on)), 67, delta=9)
+        self.assertAlmostEqual(float(np.median(off)), 33, delta=9)
+        self.assertLess(max(on) - min(on), 25, "dash lengths must be regular")
+        solid = runs(None)
+        self.assertEqual(sum(1 for c, _ in solid if not c), 0, "a solid stroke has no gaps")
 
     def test_erase_removes_ink_and_leaves_only_a_faint_ghost(self):
         prog = _tiny_program(4.0)

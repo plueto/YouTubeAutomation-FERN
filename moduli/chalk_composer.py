@@ -46,6 +46,7 @@ class Path:
     dryness: float = 0.55
     speed: float = 800.0     # px/s along the path
     min_dur: float = 0.04
+    dash: tuple[float, float] | None = None
 
 
 def path_time(p: "Path") -> float:
@@ -113,7 +114,7 @@ def E_illus(name: str, cx: float, cy: float, size: float, *, anchor: float | Non
     parts = build_illustration(name, cx, cy, size, seed=seed, detail=detail, rotate=rotate, flip=flip)
     base = max(3.6, min(9.0, size * 0.0158))
     sp = 1800.0 + size * 4.2
-    paths = [Path(p.pts, p.color, max(2.6, base * p.weight), p.stage, 0.5 + 0.1 * (p.stage >= 2), sp) for p in parts]
+    paths = [Path(p.pts, p.color, max(2.6, base * p.weight), p.stage, 0.5 + 0.1 * (p.stage >= 2), sp, dash=p.dash) for p in parts]
     return Element("illus", paths, anchor, lead, 0.0, impact, f"illus:{name}", focus=(cx, cy), importance=importance)
 
 
@@ -477,6 +478,10 @@ def L_question(spec: SceneSpec):
     return els, (1300 if not s.mirror else 620, 520), els.index(q)
 
 
+ART: dict[str, Callable[[SceneSpec], tuple[list[Element], tuple[float, float], int]]] = {}
+"""Hand-composed, scene-specific layouts (see ``chalk_scene_art``). A scene opts in with ``chalk["art"]``; the
+generic layouts and the director never select these on their own."""
+
 LAYOUT_FN: dict[str, Callable[[SceneSpec], tuple[list[Element], tuple[float, float], int]]] = {
     "hero": L_hero, "duo": L_duo, "chain": L_chain, "versus": L_versus, "iceberg": L_iceberg,
     "bignumber": L_bignumber, "network": L_network, "timeline": L_timeline, "evidence": L_evidence,
@@ -663,6 +668,7 @@ def compose_program(plan: dict[str, Any], *, seed: int = 0, max_pages: int = 3) 
         layout = str(ch.get("layout") or "hero")
         if layout not in LAYOUT_FN:
             layout = "hero"
+        build = ART.get(str(ch.get("art") or ""), LAYOUT_FN[layout])
         # anchors: dict key -> phrase; resolve to times
         anchors: dict[str, float] = {}
         for key, phrase in (ch.get("anchors") or {}).items():
@@ -683,14 +689,14 @@ def compose_program(plan: dict[str, Any], *, seed: int = 0, max_pages: int = 3) 
         t_first = max(t0 + lead_in, (erase_free_at + 0.05) if trans[i] == "erase" else 0.0)
         t_last = t1 - hold
         pacing: list[str] = []
-        els, focus, focal_idx = LAYOUT_FN[layout](spec)
+        els, focus, focal_idx = build(spec)
         sched, k, ok, pull = _fit(els, t_first, t_last, 1.5)
         detail = spec.detail
 
         def _relayout(d: int) -> None:
             nonlocal els, focus, focal_idx
             spec.detail = d
-            els, focus, focal_idx = LAYOUT_FN[layout](spec)
+            els, focus, focal_idx = build(spec)
 
         # pacing decisions, gentlest first: no hatching -> drop decoration -> drop secondary
         # captions -> bare outlines -> drop the costliest extras -> only then hurry the pen
@@ -808,6 +814,8 @@ def compose_program(plan: dict[str, Any], *, seed: int = 0, max_pages: int = 3) 
             "strokes": len(prog.strokes) - n_strokes0, "pen_busy_until": round(last_end, 3),
             "pen_speedup": round(k, 2), "anchor_pull": round(pull, 2), "fits": bool(ok), "pacing": pacing, "detail": detail, "word_timing": wsrc, "camera": style,
             "first_stroke": round(prog.strokes[n_strokes0].t0, 3) if len(prog.strokes) > n_strokes0 else None,
+            "elements": [{"tag": e.tag, "start": round(a, 2), "end": round(b, 2), "importance": e.importance} for e, a, b in el_times],
+            "dropped": [d for d in pacing if d.startswith("dropped")],
         })
         prev_layout = layout
 
@@ -836,6 +844,12 @@ def _emit(prog: Program, e: Element, start: float, ox: float, k: float, rng: ran
         d = path_time(p) / sp_var / k
         pts = p.pts + np.array([ox, 0.0], np.float32)
         prog.strokes.append(Stroke(pts, t, max(0.025, d), p.color, p.width, dryness=p.dryness,
-                                   ease=0.45 if e.kind == "text" else 0.7, tag=e.tag))
+                                   ease=0.45 if e.kind == "text" else 0.7, tag=e.tag, dash=p.dash))
         t += d + 0.012 / k
     return t
+
+
+try:                                    # registers the hand-composed layouts into ART
+    from moduli import chalk_scene_art  # noqa: F401,E402
+except ImportError:                     # pragma: no cover
+    pass

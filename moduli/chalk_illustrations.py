@@ -34,6 +34,7 @@ class Part:
     stage: int = 0
     color: str = "chalk"
     weight: float = 1.0
+    dash: tuple[float, float] | None = None    # (on, off) in unit-square lengths; scaled when placed
 
 
 # ---------------------------------------------------------------- primitives
@@ -135,6 +136,90 @@ def _glyph(text: str, cx: float, cy: float, h: float, stage=3, color="yellow", w
         parts.append(Part(p.astype(np.float32), stage, color, weight))
     return parts
 
+
+
+
+# ----------------------------------------------------------- scene-specific drawing tools
+def _dashed(points: Iterable[Pt], dash: float = 0.04, gap: float = 0.028, stage: int = 0, color: str = "chalk",
+            weight: float = 1.0) -> list[Part]:
+    """Break a polyline into separate dashes (a drawing that is there, but not quite)."""
+    pts = np.asarray(list(points), np.float32)
+    if len(pts) < 2:
+        return []
+    seg = np.hypot(*np.diff(pts, axis=0).T)
+    cum = np.concatenate(([0.0], np.cumsum(seg)))
+    total = float(cum[-1])
+    out: list[Part] = []
+    s0 = 0.0
+    while s0 < total - 1e-4:
+        s1 = min(total, s0 + dash)
+        ss = np.linspace(s0, s1, max(2, int((s1 - s0) / 0.012) + 2))
+        out.append(Part(np.stack([np.interp(ss, cum, pts[:, 0]), np.interp(ss, cum, pts[:, 1])], axis=1).astype(np.float32), stage, color, weight))
+        s0 += dash + gap
+    return out
+
+
+def _dashed1(points: Iterable[Pt], dash: float = 0.04, gap: float = 0.028, stage: int = 0, color: str = "chalk",
+             weight: float = 1.0) -> Part:
+    """The same dashed line as ``_dashed`` but as ONE pen stroke with lifts (cheap to draw, few strokes)."""
+    return Part(np.asarray(list(points), np.float32), stage, color, weight, (dash, gap))
+
+
+def _inside(poly: Sequence[Pt], xy: np.ndarray) -> np.ndarray:
+    """Vectorised point-in-polygon (even-odd rule)."""
+    px, py = np.array([p[0] for p in poly], np.float64), np.array([p[1] for p in poly], np.float64)
+    x, y = xy[:, 0].astype(np.float64), xy[:, 1].astype(np.float64)
+    res = np.zeros(len(xy), bool)
+    j = len(poly) - 1
+    for i in range(len(poly)):
+        cond = ((py[i] > y) != (py[j] > y)) & (x < (px[j] - px[i]) * (y - py[i]) / (py[j] - py[i] + 1e-12) + px[i])
+        res ^= cond
+        j = i
+    return res
+
+
+def _occlude(parts: Iterable[Part], polygon: Sequence[Pt], spacing: float = 0.006) -> list[Part]:
+    """Remove the pieces of ``parts`` that lie inside ``polygon``: whatever is drawn in front hides them."""
+    out: list[Part] = []
+    for part in parts:
+        dense = densify(part.pts, spacing)
+        hidden = _inside(polygon, dense)
+        run: list[int] = []
+        for i, h in enumerate(hidden):
+            if not h:
+                run.append(i)
+            if (h or i == len(hidden) - 1) and len(run) >= 3:
+                out.append(Part(dense[run[0]:run[-1] + 1].copy(), part.stage, part.color, part.weight))
+            if h:
+                run = []
+    return out
+
+
+def _dial(needle_deg: float, zone: tuple[float, float] | None, ends: tuple[str, str] | None, label_stage: int = 1) -> list[Part]:
+    """A graduated semicircular dial. Angles in degrees on the upper half: 180 = far left, 360 = far right."""
+    cx, cy, r = 0.5, 0.74, 0.43
+    p: list[Part] = [_P(arc(cx, cy, r, r, 180, 360, 30)), _P([(cx - r, cy), (cx + r, cy)], 0), _P(arc(cx, cy, r * 0.66, r * 0.66, 180, 360, 22), 1, weight=0.6)]
+    for i in range(0, 13, 2):
+        a = math.radians(180 + 15 * i)
+        long = i % 6 == 0
+        r0 = r * (0.8 if long else 0.88)
+        p.append(_P([(cx + r0 * math.cos(a), cy + r0 * math.sin(a)), (cx + r * 0.97 * math.cos(a), cy + r * 0.97 * math.sin(a))], 0 if long else 1, weight=0.9 if long else 0.6))
+    if zone:
+        a0, a1 = zone
+        ring = [(cx + r * 0.7 * math.cos(math.radians(a)), cy + r * 0.7 * math.sin(math.radians(a))) for a in np.linspace(a0, a1, 14)]
+        ring += [(cx + r * 0.97 * math.cos(math.radians(a)), cy + r * 0.97 * math.sin(math.radians(a))) for a in np.linspace(a1, a0, 14)]
+        p += _hatch(ring, 0.026, 40, inset=0.0, stage=2, color="chalk", weight=0.55)
+        p += _hatch(ring, 0.05, 130, inset=0.0, stage=2, color="dim", weight=0.45)
+        p.append(_P(arc(cx, cy, r * 0.985, r * 0.985, a0, a1, 12), 3, "yellow", 1.3))
+    a = math.radians(needle_deg)
+    p.append(_P([(cx, cy), (cx + r * 0.86 * math.cos(a), cy + r * 0.86 * math.sin(a))], 0, weight=1.4))
+    p.append(_ell(cx, cy, 0.04, 0.04, stage=0, weight=1.0))
+    p.append(_P([(cx + r * 0.6 * math.cos(a), cy + r * 0.6 * math.sin(a)), (cx + r * 0.86 * math.cos(a), cy + r * 0.86 * math.sin(a))], 3, "yellow", 1.6))
+    p += _hatch([(cx - 0.12, cy), (cx + 0.12, cy), (cx + 0.1, cy + 0.1), (cx - 0.1, cy + 0.1)], 0.035, 45, stage=2)
+    if ends:
+        p += _glyph(ends[0], cx - r * 0.86, cy + 0.12, 0.07, stage=label_stage, color="dim", weight=0.8)
+        p += _glyph(ends[1], cx + r * 0.86, cy + 0.12, 0.07, stage=label_stage, color="dim", weight=0.8)
+    return p
 
 # --------------------------------------------------------------- illustrations
 def person() -> list[Part]:
@@ -713,6 +798,138 @@ def frown() -> list[Part]:
     p += [_P([(0.72, 0.52), (0.74, 0.62), (0.7, 0.68)], 3, "teal", 1.0)]
     return p
 
+def gradebook() -> list[Part]:
+    """An open teacher's gradebook: ruled name column, a column of marks with one circled, a pencil."""
+    left = [(0.05, 0.24), (0.5, 0.3), (0.5, 0.9), (0.05, 0.84), (0.05, 0.24)]
+    right = [(0.5, 0.3), (0.95, 0.24), (0.95, 0.84), (0.5, 0.9), (0.5, 0.3)]
+    p = [_P(left), _P(right), _P([(0.5, 0.3), (0.5, 0.9)], 0, weight=1.2),
+         _P([(0.05, 0.84), (0.07, 0.9), (0.5, 0.96), (0.93, 0.9), (0.95, 0.84)], 1, weight=0.8)]
+    for i in range(5):                               # ruled lines follow the page perspective
+        t = 0.2 + i * 0.12
+        p.append(_P([(0.09, 0.24 + t * 0.6), (0.47, 0.3 + t * 0.6)], 1, weight=0.55))
+    p.append(_P([(0.7, 0.285), (0.7, 0.87)], 1, weight=0.5))                       # one column rule
+    for i, g in enumerate("ABC"):                    # marks, one per ruled row
+        y = 0.4 + i * 0.15
+        p += _glyph(g, 0.6, y, 0.08, stage=1, color="chalk", weight=0.85, seed=i)
+    p += _hatch([(0.46, 0.3), (0.5, 0.3), (0.5, 0.9), (0.46, 0.89)], 0.02, 90, inset=0.0, stage=2, weight=0.5)   # gutter shadow
+    p += _hatch([(0.5, 0.3), (0.55, 0.29), (0.55, 0.88), (0.5, 0.9)], 0.02, 90, inset=0.0, stage=2, weight=0.5)
+    p += [_P([(0.84, 0.1), (0.97, 0.47), (0.995, 0.54), (1.03, 0.45), (0.9, 0.08), (0.87, 0.04), (0.84, 0.1)], 0, weight=1.1)]
+    p += [_P([(0.99, 0.51), (0.995, 0.54), (1.01, 0.5)], 3, "yellow", 1.4)]
+    p.append(_ell(0.6, 0.395, 0.075, 0.06, stage=3, color="yellow", weight=1.2))
+    return p
+
+
+def orgchart() -> list[Part]:
+    """A tiny company hierarchy: the top box is the boss - circled, crowned and shaded."""
+    p: list[Part] = []
+    top = (0.34, 0.1, 0.32, 0.18)
+    mids = [(0.04, 0.42, 0.26, 0.15), (0.37, 0.42, 0.26, 0.15), (0.7, 0.42, 0.26, 0.15)]
+    lows = [(0.04 + i * 0.24, 0.74, 0.19, 0.12) for i in range(4)]
+    p.append(_rect(*top))
+    for b in mids:
+        p.append(_rect(*b, stage=0, weight=0.9))
+    for b in lows:
+        p.append(_rect(*b, stage=1, weight=0.7))
+    # connectors
+    p.append(_P([(0.5, 0.28), (0.5, 0.35), (0.17, 0.35), (0.17, 0.42)], 0, weight=0.8))
+    p.append(_P([(0.5, 0.35), (0.83, 0.35), (0.83, 0.42)], 0, weight=0.8))
+    p.append(_P([(0.5, 0.35), (0.5, 0.42)], 0, weight=0.8))
+    for i, b in enumerate(lows):
+        m = mids[min(2, i * 3 // 4)]
+        mx = m[0] + m[2] / 2
+        p.append(_P([(mx, m[1] + m[3]), (mx, 0.66), (b[0] + b[2] / 2, 0.66), (b[0] + b[2] / 2, b[1])], 1, weight=0.6))
+    # a person mark in each upper box
+    for b in [top]:
+        cx, cy = b[0] + b[2] / 2, b[1] + b[3] / 2
+        p.append(_ell(cx, cy - 0.025, 0.022, 0.024, stage=1, weight=0.7))
+        p.append(_P(arc(cx, cy + 0.07, 0.045, 0.04, 200, 340, 6), 1, weight=0.7))
+    p += _hatch([(top[0], top[1]), (top[0] + top[2], top[1]), (top[0] + top[2], top[1] + top[3]), (top[0], top[1] + top[3])], 0.03, 45, inset=0.0, stage=2, weight=0.6)
+    p.append(_P([(0.38, 0.08), (0.42, 0.01), (0.46, 0.07), (0.5, 0.0), (0.54, 0.07), (0.58, 0.01), (0.62, 0.08)], 3, "yellow", 1.3))
+    p.append(_ell(0.5, 0.19, 0.27, 0.16, -20, 330, stage=3, color="yellow", weight=1.0))
+    return p
+
+
+def score_dial() -> list[Part]:
+    """A credit-score dial, 300 to 850, needle resting in the middle of the band."""
+    return _dial(247, (205, 235), ("300", "850"))
+
+
+def danger_gauge() -> list[Part]:
+    """A danger gauge whose needle has swung into the crosshatched red zone."""
+    return _dial(318, (290, 345), ("LOW", "HIGH"), label_stage=2)
+
+
+def silhouette() -> list[Part]:
+    """A figure seen from behind, shaded as a solid mass: someone standing in front of something."""
+    body = [(0.1, 1.0), (0.12, 0.74)] + arc(0.5, 0.74, 0.38, 0.2, 180, 360, 12) + [(0.9, 1.0)]
+    p = [_ell(0.5, 0.3, 0.17, 0.2), _P(body), _P([(0.44, 0.48), (0.44, 0.58)], 1, weight=0.8), _P([(0.56, 0.48), (0.56, 0.58)], 1, weight=0.8)]
+    head = arc(0.5, 0.3, 0.17, 0.2, 0, 360, 18)
+    p += _hatch(head, 0.045, 60, inset=0.004, stage=2, weight=0.65)
+    p += _hatch(body + [(0.1, 1.0)], 0.05, 60, inset=0.004, stage=2, weight=0.65)
+    p += _hatch(body + [(0.1, 1.0)], 0.1, 120, inset=0.01, stage=2, color="dim", weight=0.5)
+    p.append(_P([(0.38, 0.12), (0.5, 0.08), (0.62, 0.12)], 1, weight=0.7))
+    return p
+
+
+def ration_valve() -> list[Part]:
+    """A tank feeding a pipe through a half-closed valve; only a thin trickle comes out: rationed effort."""
+    p: list[Part] = []
+    top = arc(0.17, 0.2, 0.15, 0.05, 0, 360, 14)
+    p += [_P(top), _P([(0.02, 0.2), (0.02, 0.78)]), _P([(0.32, 0.2), (0.32, 0.78)]), _P(arc(0.17, 0.78, 0.15, 0.05, 0, 180, 10))]
+    p += [_P(arc(0.17, 0.5, 0.14, 0.04, 0, 180, 8), 1, weight=0.6)]                       # liquid surface
+    p += _hatch([(0.04, 0.5), (0.3, 0.5), (0.3, 0.77), (0.04, 0.77)], 0.035, 45, inset=0.0, stage=2, weight=0.6)
+    p += _glyph("MODEL", 0.17, 0.34, 0.05, stage=1, color="chalk", weight=0.8, seed=2)
+    p += [_P([(0.31, 0.6), (0.78, 0.6)]), _P([(0.31, 0.68), (0.78, 0.68)]), _P([(0.78, 0.6), (0.78, 0.84)]), _P([(0.86, 0.68), (0.86, 0.84)]),
+          _P([(0.78, 0.84), (0.86, 0.84)])]
+    p += [_rect(0.5, 0.56, 0.08, 0.16, stage=0, weight=0.9)]
+    p.append(_P([(0.54, 0.56), (0.54, 0.46)], 0, weight=0.9))
+    for k in range(2):                                  # valve wheel, turned about 30 degrees: half closed
+        a = math.radians(30 + k * 90)
+        p.append(_P([(0.54 - 0.1 * math.cos(a), 0.36 - 0.1 * math.sin(a)), (0.54 + 0.1 * math.cos(a), 0.36 + 0.1 * math.sin(a))], 1, weight=0.9))
+    p.append(_ell(0.54, 0.36, 0.1, 0.1, stage=0, weight=1.0))
+    p += _hatch([(0.31, 0.68), (0.78, 0.68), (0.78, 0.72), (0.31, 0.72)], 0.025, 45, inset=0.0, stage=2, weight=0.5)
+    p.append(_P([(0.82, 0.86), (0.82, 0.95)], 3, "yellow", 1.4))
+    p += [_ell(0.82, 0.975, 0.012, 0.018, stage=3, color="yellow", weight=0.9),
+          _P([(0.74, 0.985), (0.76, 1.04), (0.88, 1.04), (0.9, 0.985)], 0, weight=0.9)]       # the cup that catches it
+    return p
+
+
+def frosted_pane() -> list[Part]:
+    """A window of frosted glass: you can tell there is something behind it, not what."""
+    outer = [(0.06, 0.05), (0.94, 0.05), (0.94, 0.95), (0.06, 0.95)]
+    inner = [(0.1, 0.09), (0.9, 0.09), (0.9, 0.91), (0.1, 0.91)]
+    p = [_P(outer + [(0.06, 0.044)], 0, weight=1.2), _P(inner + [(0.1, 0.084)], 0, weight=0.8)]
+    for x, y in ((0.08, 0.07), (0.92, 0.07), (0.08, 0.93), (0.92, 0.93)):
+        p.append(_ell(x, y, 0.012, 0.012, stage=1, weight=0.7))
+    p += _hatch(inner, 0.055, 52, inset=0.012, stage=1, color="dim", weight=0.5)
+    p += _hatch([(0.1, 0.55), (0.55, 0.91), (0.1, 0.91)], 0.12, 128, inset=0.01, stage=2, color="dim", weight=0.45)
+    p += [_P([(0.7, 0.16), (0.8, 0.26)], 2, weight=0.7), _P([(0.76, 0.14), (0.86, 0.24)], 2, weight=0.7)]       # glint
+    return p
+
+
+def sealed_card() -> list[Part]:
+    """A report card as it exists behind frosted glass: dashed, dim, its grade slot empty."""
+    card = [(0.14, 0.06), (0.86, 0.06), (0.86, 0.94), (0.14, 0.94), (0.14, 0.06)]
+    p = [_dashed1(card, 0.05, 0.032, 0, "dim", 0.9)]
+    for i in range(4):
+        p.append(_dashed1([(0.22, 0.2 + i * 0.1), (0.7 - (0.12 if i % 2 else 0), 0.2 + i * 0.1)], 0.045, 0.03, 1, "dim", 0.5))
+    p.append(_dashed1(arc(0.5, 0.68, 0.24, 0.17, 0, 360, 22), 0.05, 0.035, 1, "dim", 0.8))     # the empty grade slot
+    return p
+
+
+def stamp_final() -> list[Part]:
+    """A rubber stamp that has landed crooked: FINAL."""
+    a = math.radians(-9)
+    def rot(pts):
+        return [(0.5 + (x - 0.5) * math.cos(a) - (y - 0.5) * math.sin(a), 0.5 + (x - 0.5) * math.sin(a) + (y - 0.5) * math.cos(a)) for x, y in pts]
+    outer = [(0.04, 0.3), (0.96, 0.3), (0.96, 0.7), (0.04, 0.7), (0.04, 0.296)]
+    inner = [(0.08, 0.34), (0.92, 0.34), (0.92, 0.66), (0.08, 0.66), (0.08, 0.336)]
+    p = [_P(rot(outer), 0, "yellow", 1.5), _P(rot(inner), 0, "yellow", 0.8)]
+    for g in _glyph("FINAL", 0.5, 0.5, 0.2, stage=0, color="yellow", weight=1.5, seed=5):
+        p.append(Part(np.array(rot([tuple(q) for q in g.pts]), np.float32), 0, "yellow", 1.5))
+    return p
+
+
 # ------------------------------------------------------------------ registry
 LIBRARY: dict[str, Callable[[], list[Part]]] = {
     "person": person, "crowd": crowd, "robot": robot, "brain": brain, "network": network, "server": server,
@@ -725,6 +942,10 @@ LIBRARY: dict[str, Callable[[], list[Part]]] = {
     "iceberg": iceberg, "rocket": rocket, "trophy": trophy, "briefcase": briefcase, "cart": cart, "flag": flag,
     "ladder": ladder, "door": door, "reportcard": reportcard, "check": check, "cross": cross,
     "question": question, "dollar": dollar, "crack": crack, "frown": frown,
+    # scene-specific drawings (no keyword triggers: they are used only by explicit plans / compositions)
+    "gradebook": gradebook, "orgchart": orgchart, "score_dial": score_dial, "danger_gauge": danger_gauge,
+    "silhouette": silhouette, "ration_valve": ration_valve, "frosted_pane": frosted_pane,
+    "sealed_card": sealed_card, "stamp_final": stamp_final,
 }
 
 # word -> illustration lexicon used by the local director (first match wins ties by weight)
@@ -968,5 +1189,6 @@ def build_illustration(name: str, cx: float, cy: float, size: float, *, seed: in
             norm = float(np.hypot(*d))
             if norm > 1e-3 and rng.random() < 0.5:
                 arr = np.vstack([arr, arr[-1] + d / norm * rng.uniform(1.5, 4.5)])
-        out.append(Part(arr.astype(np.float32), part.stage, part.color, part.weight))
+        out.append(Part(arr.astype(np.float32), part.stage, part.color, part.weight,
+                        (part.dash[0] * size, part.dash[1] * size) if part.dash else None))
     return out

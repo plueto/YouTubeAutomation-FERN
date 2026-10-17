@@ -95,6 +95,7 @@ class Stroke:
     pressure: float = 1.0
     ease: float = 0.6          # 0 = constant speed, 1 = strong ease in/out
     tag: str = ""
+    dash: tuple[float, float] | None = None   # (on, off) in world px: the pen lifts every ``off`` px
     cum: np.ndarray = field(init=False, repr=False)
     length: float = field(init=False)
 
@@ -301,6 +302,29 @@ class ChalkEngine:
 
     # ----- chalk painting -------------------------------------------------
     def _paint(self, path: np.ndarray, st: Stroke, s_start: float, s_end: float) -> None:
+        """Paint ``path`` as chalk; a dashed stroke is split into its dashes (pattern phase follows the
+        stroke's own arc length, so it is continuous across frames)."""
+        if st.dash is None or len(path) < 2:
+            self._paint_run(path, st, s_start, s_end)
+            return
+        on, off = st.dash
+        seg = np.hypot(*np.diff(path, axis=0).T)
+        pos = s_start * st.length + np.concatenate(([0.0], np.cumsum(seg)))
+        mid = (pos[:-1] + pos[1:]) / 2
+        is_on = (mid % (on + off)) < on
+        run: list[int] = []
+        for i, flag in enumerate(is_on):
+            if flag:
+                run.append(i)
+            if (not flag or i == len(is_on) - 1) and run:
+                piece = path[run[0]:run[-1] + 2]
+                if len(piece) >= 2:
+                    f0 = s_start + (s_end - s_start) * run[0] / max(1, len(path) - 1)
+                    f1 = s_start + (s_end - s_start) * (run[-1] + 1) / max(1, len(path) - 1)
+                    self._paint_run(piece, st, f0, f1)
+                run = []
+
+    def _paint_run(self, path: np.ndarray, st: Stroke, s_start: float, s_end: float) -> None:
         """Paint ``path`` (k>=2 world points) as chalk. s_* are 0..1 along the stroke."""
         if len(path) < 2:
             return
