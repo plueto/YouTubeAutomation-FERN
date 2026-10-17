@@ -521,6 +521,17 @@ class ComposerTests(unittest.TestCase):
             self.assertLessEqual(x0, float(allp[:, 0].min()) + 60)
             self.assertGreaterEqual(x0 + 320 / s, float(allp[:, 0].max()) - 60)
 
+    def test_short_statement_cards_become_text_only_instead_of_hurrying_the_pen(self):
+        """A 2 s statement card cannot hold a title *and* an icon; text-only at a natural pen beats a hurried pen."""
+        rows = [_row(1, 0.0, 2.1, "You are being graded right now.")]
+        story.plan_chalk_scenes(rows)
+        self.assertEqual(rows[0]["chalk"]["layout"], "statement")
+        prog = compose_program({"duration_seconds": 2.1, "scenes": rows})
+        meta = prog.meta["scenes"][0]
+        self.assertLessEqual(meta["pen_speedup"], 1.3)
+        self.assertTrue(all(s.tag.startswith("text:") for s in prog.strokes), "icon should have been dropped")
+        self.assertTrue(meta["fits"])
+
     def test_short_beats_lose_detail_not_sync(self):
         rows = [_row(1, 0.0, 2.2, "This isn't science fiction.")]
         story.plan_chalk_scenes(rows)

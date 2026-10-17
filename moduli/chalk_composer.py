@@ -709,7 +709,7 @@ def compose_program(plan: dict[str, Any], *, seed: int = 0, max_pages: int = 3) 
             if ok:
                 break
             keep = [e for e in els if e.importance > imp]
-            if 2 <= len(keep) < len(els):
+            if 1 <= len(keep) < len(els) and (len(keep) >= 2 or layout == "statement"):
                 focal_el = els[focal_idx] if focal_idx < len(els) else None
                 els = keep
                 focal_idx = els.index(focal_el) if focal_el in els else 0
