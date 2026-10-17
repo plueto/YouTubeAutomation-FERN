@@ -51,9 +51,9 @@ def rejected_judges(spec: SceneSpec):
     Anchors: judge0, judge1, judge2 (the nouns); optional label0-2 are skipped when time is short.
     """
     s = spec
-    props = [("gradebook", 440, 520, 500), ("orgchart", 960, 600, 430), ("score_dial", 1480, 530, 500)]
+    props = [("gradebook", 420, 520, 450), ("orgchart", 960, 590, 400), ("score_dial", 1500, 530, 450)]
     els: list[Element] = []
-    names = ["TEACHER", "BOSS", "CREDIT BUREAU"]
+    names = ["TEACHER", "BOSS", "BUREAU"]
     focal = 0
     for i, (name, cx, cy, size) in enumerate(props):
         t = _an(s, f"judge{i}")
@@ -62,7 +62,7 @@ def rejected_judges(spec: SceneSpec):
         els.append(_strike(cx, cy, size * 0.74, size * 0.62, _later(t, 0.15), s.seed + 20 + i))
         lab = names[i]
         els.append(E_text(lab, cx, cy + size * 0.5 + 70, _fit_cap(lab, 46, 440), color="yellow" if i == 2 else "chalk",
-                          anchor=_later(t, 0.1), seed=s.seed + 40 + i, importance=1))
+                          anchor=_later(t, 0.1), seed=s.seed + 40 + i, importance=2))
         if i == 2:
             focal = len(els) - 3
     return els, (PAGE_W / 2, 520), focal
