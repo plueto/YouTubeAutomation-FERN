@@ -315,6 +315,33 @@ class EngineTests(unittest.TestCase):
             self.assertGreaterEqual(x0, 0)
             self.assertLessEqual(x0 + 320 / s, prog.world_w + 1e-3)
 
+    def test_fast_pans_are_motion_blurred_and_static_frames_are_untouched(self):
+        """Artifact A-005: pans moved 10-21% of the frame per frame with razor-sharp lines (strobing)."""
+        def program():
+            prog = Program(world_pages=2, duration=4.0)
+            for x in range(200, 3700, 180):                      # lots of vertical chalk lines to smear
+                prog.strokes.append(Stroke(densify([(x, 200), (x, 900)], 2.5), 0.0, 0.2, "chalk", 6, dryness=0.2))
+            prog.camera = [CamKey(0, PAGE_W / 2, PAGE_H / 2, 1.0), CamKey(1.5, PAGE_W / 2, PAGE_H / 2, 1.0),
+                           CamKey(2.1, PAGE_W * 1.5, PAGE_H / 2, 1.0)]
+            return prog
+
+        def sharpness(frame):
+            g = frame.mean(axis=2).astype(np.float32)
+            return float(np.abs(np.diff(g, axis=1)).mean())
+
+        blur = ChalkEngine(program(), 640, 360, 24, seed=2, grain_noise=0)
+        sharp = ChalkEngine(program(), 640, 360, 24, seed=2, grain_noise=0, motion_blur=False)
+        frames = {}
+        for i in range(60):
+            t = i / 24
+            a, b = blur.render(t), sharp.render(t)
+            frames[i] = (a, b)
+        self.assertTrue(np.array_equal(*frames[12]), "a still camera must render identically with or without blur")
+        mid = 1.8                                                # the fastest part of the pan
+        a, b = frames[int(mid * 24)]
+        self.assertLess(sharpness(a), sharpness(b) * 0.75, "moving frames should be visibly smoothed")
+        self.assertGreater(float(a.mean()), 8.0, "blur must not black out the frame")
+
     def test_dust_particles_fall_and_expire(self):
         eng = ChalkEngine(_tiny_program(4.0), 320, 180, 12)
         for i in range(12):

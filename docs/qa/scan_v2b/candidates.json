@@ -1,0 +1,119 @@
+[
+  {
+    "type": "caption_too_brief",
+    "scene": 1,
+    "t": 1.07,
+    "severity": "low",
+    "metric": "text:BEING GRADED is complete for 0.82s, needs ~1.00s (2 word(s))",
+    "frame": 25,
+    "frame_file": "frames/00_caption_too_brief_t1.1.png"
+  },
+  {
+    "type": "short_dwell",
+    "scene": 1,
+    "t": 1.79,
+    "severity": "medium",
+    "metric": "finished drawing visible for 0.10s before the camera/eraser moves",
+    "frame": 42,
+    "frame_file": "frames/01_short_dwell_t1.8.png"
+  },
+  {
+    "type": "caption_too_brief",
+    "scene": 2,
+    "t": 5.91,
+    "severity": "low",
+    "metric": "text:BUREAU is complete for 0.45s, needs ~0.75s (1 word(s))",
+    "frame": 141,
+    "frame_file": "frames/02_caption_too_brief_t5.9.png"
+  },
+  {
+    "type": "short_dwell",
+    "scene": 2,
+    "t": 6.07,
+    "severity": "low",
+    "metric": "finished drawing visible for 0.29s before the camera/eraser moves",
+    "frame": 145,
+    "frame_file": "frames/03_short_dwell_t6.1.png"
+  },
+  {
+    "type": "short_dwell",
+    "scene": 3,
+    "t": 11.46,
+    "severity": "low",
+    "metric": "finished drawing visible for 0.35s before the camera/eraser moves",
+    "frame": 274,
+    "frame_file": "frames/04_short_dwell_t11.5.png"
+  },
+  {
+    "type": "caption_out_of_sync",
+    "scene": 5,
+    "t": 24.37,
+    "severity": "medium",
+    "metric": "'DANGEROUS?' finishes +1.89s from the word 'DANGEROUS?' (tts_phrase_boundaries_interpolated timing)",
+    "frame": 584,
+    "frame_file": "frames/05_caption_out_of_sync_t24.4.png"
+  },
+  {
+    "type": "short_dwell",
+    "scene": 5,
+    "t": 26.68,
+    "severity": "low",
+    "metric": "finished drawing visible for 0.41s before the camera/eraser moves",
+    "frame": 640,
+    "frame_file": "frames/06_short_dwell_t26.7.png"
+  },
+  {
+    "type": "caption_too_brief",
+    "scene": 6,
+    "t": 28.48,
+    "severity": "low",
+    "metric": "text:NOT SCIENCE FICTION is complete for 0.79s, needs ~1.25s (3 word(s))",
+    "frame": 683,
+    "frame_file": "frames/07_caption_too_brief_t28.5.png"
+  },
+  {
+    "type": "short_dwell",
+    "scene": 6,
+    "t": 29.16,
+    "severity": "medium",
+    "metric": "finished drawing visible for 0.12s before the camera/eraser moves",
+    "frame": 699,
+    "frame_file": "frames/08_short_dwell_t29.2.png"
+  },
+  {
+    "type": "caption_out_of_sync",
+    "scene": 7,
+    "t": 36.04,
+    "severity": "medium",
+    "metric": "'INVISIBLE SCAFFOLD' finishes +1.85s from the word 'INVISIBLE' (tts_phrase_boundaries_interpolated timing)",
+    "frame": 864,
+    "frame_file": "frames/09_caption_out_of_sync_t36.0.png"
+  },
+  {
+    "type": "caption_too_brief",
+    "scene": 8,
+    "t": 46.63,
+    "severity": "low",
+    "metric": "text:? is complete for 0.74s, needs ~0.75s (1 word(s))",
+    "frame": 1119,
+    "frame_file": "frames/10_caption_too_brief_t46.6.png"
+  },
+  {
+    "type": "text_over_drawing",
+    "scene": 8,
+    "t": 46.58,
+    "severity": "medium",
+    "metric": "text:? overlaps illus:sealed_card (100% of the caption)",
+    "frame": 1119,
+    "frame_file": "frames/11_text_over_drawing_t46.6.png"
+  },
+  {
+    "type": "text_over_drawing",
+    "scene": 8,
+    "t": 46.58,
+    "severity": "medium",
+    "metric": "text:? overlaps illus:frosted_pane (100% of the caption)",
+    "frame": 1119,
+    "frame_file": "frames/12_text_over_drawing_t46.6.png"
+  }
+]

@@ -47,8 +47,8 @@
    "frame": "camera measurements in docs/qa/audit_baseline.md section 4",
    "severity": "medium (WARNING: strobing suspected, not yet viewed)",
    "cause": "pans move up to 133 px/frame (10% of frame width), wrap pan 274 px/frame (21%), no motion blur",
-   "fix": "",
-   "status": "needs-human-review",
+   "fix": "ChalkEngine motion_blur: directional box blur (half the per-frame move, i.e. a 180-degree shutter) on frames where the camera moves > 24 output px. FIRST ATTEMPT REJECTED after viewing frames: averaging 8 sub-frames left a comb of ghost images (worse than no blur). Static-camera frames are bit-identical to the old engine.",
+   "status": "fixed-unverified",
    "verification": {}
   },
   {

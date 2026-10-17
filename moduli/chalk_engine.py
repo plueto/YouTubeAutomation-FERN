@@ -231,10 +231,11 @@ class ChalkEngine:
     """Renders a :class:`Program` frame by frame (strictly sequential in time)."""
 
     def __init__(self, program: Program, out_w: int, out_h: int, fps: int, *, seed: int = 7,
-                 dust: bool = True, glow: float = 0.22, grain_noise: float = 2.2) -> None:
+                 dust: bool = True, glow: float = 0.22, grain_noise: float = 2.2, motion_blur: bool = True) -> None:
         self.p = program
         self.out_w, self.out_h, self.fps = int(out_w), int(out_h), int(fps)
         self.dust_on = dust
+        self.motion_blur = motion_blur
         self.glow = glow
         self.grain_noise = grain_noise
         self.rng = np.random.default_rng(seed)
@@ -509,6 +510,23 @@ class ChalkEngine:
         self._particles = alive
 
     # ----- frame ----------------------------------------------------------
+    def _composite(self, x0: float, y0: float, s: float) -> np.ndarray:
+        """Board + chalk (+ glow) seen through the camera at ``(x0, y0, s)``."""
+        M = np.array([[s, 0.0, -x0 * s], [0.0, s, -y0 * s]], np.float32)
+        size = (self.out_w, self.out_h)
+        flags = cv2.INTER_LINEAR
+        board = cv2.warpAffine(self.board, M, size, flags=flags, borderMode=cv2.BORDER_REPLICATE)
+        pm = cv2.warpAffine(self.ink_pm, M, size, flags=flags, borderMode=cv2.BORDER_CONSTANT)
+        al = cv2.warpAffine(self.ink_a, M, size, flags=flags, borderMode=cv2.BORDER_CONSTANT)
+        # fixed-point composite: board * (1 - alpha) + premultiplied chalk
+        inv = cv2.cvtColor(cv2.convertScaleAbs(al, alpha=-0.93, beta=255), cv2.COLOR_GRAY2RGB)
+        out = cv2.multiply(board, inv, scale=1.0 / 255.0)
+        out = cv2.addWeighted(out, 1.0, pm, 0.93, 0)
+        if self.glow > 0:
+            halo = cv2.GaussianBlur(pm, (0, 0), 2.6 * max(0.6, s))
+            out = cv2.addWeighted(out, 1.0, halo, self.glow, 0)
+        return out
+
     def render(self, t: float) -> np.ndarray:
         """Advance the simulation to time ``t`` and return an RGB uint8 frame."""
         dt = max(0.0, t - self._last_t) if self._last_t >= 0 else 0.0
@@ -528,20 +546,17 @@ class ChalkEngine:
             self._step_particles(dt)
 
         x0, y0, s = self._view(t)
-        M = np.array([[s, 0.0, -x0 * s], [0.0, s, -y0 * s]], np.float32)
-        size = (self.out_w, self.out_h)
-        flags = cv2.INTER_LINEAR
-        board = cv2.warpAffine(self.board, M, size, flags=flags, borderMode=cv2.BORDER_REPLICATE)
-        pm = cv2.warpAffine(self.ink_pm, M, size, flags=flags, borderMode=cv2.BORDER_CONSTANT)
-        al = cv2.warpAffine(self.ink_a, M, size, flags=flags, borderMode=cv2.BORDER_CONSTANT)
-
-        # fixed-point composite: board * (1 - alpha) + premultiplied chalk
-        inv = cv2.cvtColor(cv2.convertScaleAbs(al, alpha=-0.93, beta=255), cv2.COLOR_GRAY2RGB)
-        out = cv2.multiply(board, inv, scale=1.0 / 255.0)
-        out = cv2.addWeighted(out, 1.0, pm, 0.93, 0)
-        if self.glow > 0:
-            halo = cv2.GaussianBlur(pm, (0, 0), 2.6 * max(0.6, s))
-            out = cv2.addWeighted(out, 1.0, halo, self.glow, 0)
+        out = self._composite(x0, y0, s)
+        # Motion blur: a pan is a pure translation, so a 180-degree shutter is a box blur along the motion
+        # vector (half the distance moved this frame). Without it a pan jumps 10-20% of the frame width per
+        # frame with razor-sharp chalk lines, which strobes. (Averaging a few sub-frames instead leaves a
+        # visible comb of ghost images, so that is deliberately not used.)
+        if self.motion_blur and self.fps > 0:
+            px0, py0, _ps = self._view(t - 1.0 / self.fps)
+            dx, dy = (x0 - px0) * s, (y0 - py0) * s                          # output px moved this frame
+            if math.hypot(dx, dy) > 24.0:
+                lx, ly = int(round(abs(dx) * 0.5)) | 1, int(round(abs(dy) * 0.5)) | 1
+                out = cv2.blur(out, (lx, ly), borderType=cv2.BORDER_REPLICATE)
         if self._particles:
             layer = np.zeros((self.out_h, self.out_w, 3), np.uint8)
             dust = PALETTE["chalk"]
