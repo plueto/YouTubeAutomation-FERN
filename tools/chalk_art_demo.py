@@ -36,7 +36,9 @@ SPECS: tuple[dict[str, Any], ...] = (
         "anchors": {
             "gauge": ("dangerous", "danger"),
             "valve": ("effort",),
-            "person": ("you",),
+            # Prefer the unique final phrase instead of the first earlier "you"
+            # in "how dangerous you might be ... spend on you".
+            "person": ("on you", "you"),
         },
     },
     {
