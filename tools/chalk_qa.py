@@ -290,6 +290,20 @@ def main() -> int:
         elif float(ratio) > 0.5:
             issues.append(("WARNING", "sfx", f"sound effects are loud relative to the narration ({ratio})"))
 
+    # Report-side summary fields are evidence too: never silently accept a
+    # stale declared scene count after a plan rewrite or beat merge.
+    scene_count_present = "scene_count" in plan
+    scene_count_matches = (
+        isinstance(plan.get("scene_count"), int)
+        and not isinstance(plan.get("scene_count"), bool)
+        and plan.get("scene_count") == len(plan_rows)
+    )
+    if scene_count_present and not scene_count_matches:
+        issues.append((
+            "FAIL", "scene_count",
+            f"scene_plan.json declares {plan.get('scene_count')!r} scenes but contains {len(plan_rows)} rows",
+        ))
+
     plan_ok = bool(plan_rows)
     if not plan_ok:
         content_reason = "no valid scene-plan rows"
@@ -346,6 +360,7 @@ def main() -> int:
     sound_blocked_reason = "no sound report was available or sound was disabled"
     audio_blocked_reason = "no audio stream to analyse"
     catalog: list[CheckSpec] = [
+        ("scene_count", "declared scene count matches the scene list", scene_count_present, "scene plan has no scene_count summary"),
         ("content", "every scene has visible content at its end", plan_ok and frames_ok == len(plan_rows), content_reason),
         ("pen_end", "the pen finishes before each scene ends", pen_meta_ok, "per-scene pen timing metadata is incomplete"),
         ("fits", "each scene fits without hurrying the pen", fit_meta_ok, "per-scene fits metadata is incomplete"),
