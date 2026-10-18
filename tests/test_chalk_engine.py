@@ -26,6 +26,8 @@ from moduli.chalk_composer import LAYOUTS, compose_program, find_phrase_time, sc
 from moduli.chalk_engine import (
     PAGE_H, PAGE_W, CamKey, ChalkEngine, Erase, Program, Stroke, densify,
 )
+from tools.chalk_art_demo import apply_illustration_overrides
+from tools.chalk_qa import classify_checks, overall_status, qa_exit_code
 
 
 def _have_ffmpeg() -> bool:
@@ -798,6 +800,104 @@ class EndToEndTests(unittest.TestCase):
             self.assertTrue(math.isfinite(rep["sound"]["peak"]))
             self.assertTrue(all(s["fits"] for s in rep["scenes"]), rep["scenes"])
             self.assertTrue(out.with_suffix(".scene_plan.json").is_file())
+
+
+# --------------------------------------------------------------------------- integration regression tests for the review pass
+class IllustrationDemoIntegrationTests(unittest.TestCase):
+    @staticmethod
+    def _row(start, end, excerpt):
+        return {
+            "start_seconds": float(start),
+            "end_seconds": float(end),
+            "narration_excerpt": excerpt,
+            "word_count": len(excerpt.split()),
+            "chalk": {"layout": "duo", "title": "", "labels": ["GENERIC"]},
+        }
+
+    def test_demo_selects_anchored_speech_windows_not_fixed_scene_numbers(self):
+        plan = {
+            "duration_seconds": 31.0,
+            "scenes": [
+                self._row(0, 2, "Your assistant is judging you, not by a teacher."),
+                self._row(2, 8, "Not by a boss, and not by a credit bureau."),
+                self._row(8, 16, "It estimates how dangerous you might be and how much effort the model should spend on you."),
+                self._row(16, 24, "And the score it assigns you; you will never see it."),
+                self._row(24, 31, "You cannot appeal it; you can barely prove it exists."),
+            ],
+        }
+        placements = apply_illustration_overrides(plan)
+        by_art = {p["art"]: p for p in placements}
+        self.assertEqual(set(by_art), {"rejected_judges", "two_dials", "frosted_score"})
+        self.assertEqual(by_art["rejected_judges"]["source_scenes"], [1, 2])
+        self.assertEqual(by_art["two_dials"]["source_scenes"], [3])
+        self.assertEqual(by_art["frosted_score"]["source_scenes"], [4, 5])
+
+        art_by_excerpt = {
+            row.get("illustration_demo_art"): row
+            for row in plan["scenes"] if row.get("illustration_demo_art")
+        }
+        self.assertEqual(set(art_by_excerpt), set(by_art))
+        for name, row in art_by_excerpt.items():
+            excerpt = row["narration_excerpt"].casefold()
+            self.assertIn("art", row["chalk"])
+            self.assertEqual(row["chalk"]["art"], name)
+            for phrase in row["chalk"]["anchors"].values():
+                self.assertIn(phrase.casefold(), excerpt)
+        self.assertEqual(" ".join(r["narration_excerpt"] for r in plan["scenes"]).split(),
+                         " ".join([
+                             "Your assistant is judging you, not by a teacher.",
+                             "Not by a boss, and not by a credit bureau.",
+                             "It estimates how dangerous you might be and how much effort the model should spend on you.",
+                             "And the score it assigns you; you will never see it.",
+                             "You cannot appeal it; you can barely prove it exists.",
+                         ]).split())
+
+        # Exercise the actual composer too: each opt-in art must resolve to its registered builder.
+        program = compose_program(plan, seed=11)
+        self.assertGreater(len(program.strokes), 0)
+
+    def test_demo_fails_closed_if_anchor_phrases_are_missing(self):
+        plan = {
+            "duration_seconds": 4.0,
+            "scenes": [self._row(0, 4, "A generic line with none of the requested concepts.")],
+        }
+        with self.assertRaisesRegex(ValueError, "rejected_judges"):
+            apply_illustration_overrides(plan)
+
+    def test_demo_does_not_modify_plan_when_anchor_selection_fails(self):
+        row = self._row(0, 4, "A generic line with none of the requested concepts.")
+        plan = {"duration_seconds": 4.0, "scenes": [row]}
+        original = json.loads(json.dumps(plan))
+        with self.assertRaises(ValueError):
+            apply_illustration_overrides(plan)
+        self.assertEqual(plan, original)
+
+
+class QaClassificationTests(unittest.TestCase):
+    def test_blocked_checks_are_never_pass_and_strict_mode_rejects_them(self):
+        catalog = [
+            ("content", "every scene has visible content", False, "no scene plan"),
+            ("audio_present", "video has audio", True, ""),
+        ]
+        checks = classify_checks(catalog, [])
+        self.assertEqual([c["status"] for c in checks], ["BLOCKED", "PASS"])
+        self.assertEqual(overall_status(checks), "BLOCKED")
+        self.assertEqual(qa_exit_code(checks, strict=False), 0)
+        self.assertEqual(qa_exit_code(checks, strict=True), 1)
+
+    def test_fail_always_fails_even_when_not_strict(self):
+        catalog = [("sfx", "effects are finite", True, "")]
+        checks = classify_checks(catalog, [("FAIL", "sfx", "ratio is infinite")])
+        self.assertEqual(checks[0]["status"], "FAIL")
+        self.assertEqual(qa_exit_code(checks, strict=False), 1)
+        self.assertEqual(qa_exit_code(checks, strict=True), 1)
+
+    def test_warning_is_not_a_pass_or_a_failure(self):
+        catalog = [("audio_len", "audio matches video length", True, "")]
+        checks = classify_checks(catalog, [("WARNING", "audio_len", "duration differs")])
+        self.assertEqual(checks[0]["status"], "WARNING")
+        self.assertEqual(overall_status(checks), "WARNING")
+        self.assertEqual(qa_exit_code(checks, strict=False), 0)
 
 
 if __name__ == "__main__":
