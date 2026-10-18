@@ -1,0 +1,5 @@
+You are being scored right now. Not by a teacher, not by a boss, and not by a credit bureau. Those familiar judges are not deciding how the model responds.
+
+The system estimates how dangerous you might be, and it measures how much effort the model should spend on you. The two dials can lead to different decisions.
+
+Then it assigns a hidden score you will never see. You cannot appeal it, and you can barely prove it exists. The final decision stays behind frosted glass.
