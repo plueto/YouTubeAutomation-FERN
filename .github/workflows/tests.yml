@@ -59,7 +59,7 @@ jobs:
       - name: Prepare hand-composed illustration demo narration
         run: |
           mkdir -p output/preview/illustration-demo
-          python -c "from moduli.chalk_voice import synthesize_espeak; print(synthesize_espeak('tests/fixtures/chalk_illustration_demo.txt', 'output/preview/illustration-demo/narration.mp3'))"
+          python -c "from pathlib import Path; from moduli.chalk_voice import synthesize_espeak; script=Path('tests/fixtures/chalk_illustration_demo.txt').read_text(encoding='utf-8'); print(synthesize_espeak(script, 'output/preview/illustration-demo/narration.mp3'))"
 
       - name: Render and strictly QA opt-in hand-composed illustrations
         run: |
