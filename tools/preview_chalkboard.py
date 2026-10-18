@@ -29,7 +29,12 @@ def main() -> int:
     parser.add_argument("--ai-plan", action="store_true", help="Ask OpenRouter to direct the short scene plan. Sends this excerpt to the configured model; otherwise planning remains local.")
     parser.add_argument("--align-audio", action="store_true", help="Use a locally installed ASR model with cached weights for word timestamps. Does not install or download anything.")
     parser.add_argument("--aligner-model", default="base", choices=("tiny", "base", "small", "medium"), help="Name of an already-cached local alignment model (default: base).")
-    parser.add_argument("--strict-quality", action="store_true", help="Return a failure code if technical quality checks fail.")
+    parser.add_argument("--strict-quality", action="store_true", help="Return a failure code if technical QA fails or required checks are blocked.")
+    parser.add_argument(
+        "--illustration-demo",
+        action="store_true",
+        help="Opt in to a preview-only test of the three hand-composed chalk scenes; requires narration long enough to contain their anchor phrases.",
+    )
     args = parser.parse_args()
     if args.duration <= 0:
         parser.error("--duration must be greater than zero")
@@ -116,6 +121,35 @@ def main() -> int:
                     print(f"[preview] retained {len(timed_words)} speech-timing records", flush=True)
         except Exception as exc:
             print(f"[preview] timing sidecar unavailable; using estimated timing ({type(exc).__name__})", flush=True)
+        scene_plan = None
+        if args.illustration_demo:
+            if os.environ.get("FERN_CHALK_ENGINE", "chalk").strip().lower() == "legacy":
+                print("ERROR: --illustration-demo requires the chalk engine; FERN_CHALK_ENGINE=legacy disables it.", file=sys.stderr)
+                return 2
+            try:
+                from moduli.chalkboard_director import build_scene_plan
+                from tools.chalk_art_demo import apply_illustration_overrides
+
+                beat = float(os.environ.get("FERN_CHALK_BEAT_SECONDS", "7.5"))
+                if not math.isfinite(beat) or beat <= 0:
+                    raise ValueError("FERN_CHALK_BEAT_SECONDS must be a finite positive number")
+                scene_plan = build_scene_plan(
+                    script, duration, audio_path=audio_preview, use_ai=args.ai_plan,
+                    align_audio=args.align_audio, aligner_model=args.aligner_model,
+                    target_seconds=beat,
+                )
+                placements = apply_illustration_overrides(scene_plan)
+                print("[preview] opt-in hand-composed illustrations:", flush=True)
+                for item in placements:
+                    print(
+                        f"  {item['art']}: source scenes {item['source_scenes']} "
+                        f"({item['duration_seconds']:.1f}s); anchors={item['anchors']}",
+                        flush=True,
+                    )
+            except Exception as exc:
+                print(f"ERROR: couldn't prepare illustration demo: {exc}", file=sys.stderr)
+                return 2
+
         def report(pct, eta):
             print(f"[{pct:3d}%] {eta}", flush=True)
         try:
@@ -124,6 +158,7 @@ def main() -> int:
                 use_ai_director=args.ai_plan,
                 align_audio=args.align_audio,
                 aligner_model=args.aligner_model,
+                scene_plan=scene_plan,
             )
         except Exception as exc:
             print(f"ERROR: chalkboard render failed: {exc}", file=sys.stderr)
@@ -144,6 +179,8 @@ def main() -> int:
     engine_report_exists = output.with_suffix(".chalk_report.json").is_file()
     if engine_report_exists:
         qa_cmd = [sys.executable, str(ROOT / "tools" / "chalk_qa.py"), str(output)]
+        if args.strict_quality:
+            qa_cmd.append("--strict")
     else:
         qa_cmd = [sys.executable, str(ROOT / "tools" / "chalkboard_quality.py"), str(output),
                   "--script", str(script_path), "--source-audio", str(audio)]
