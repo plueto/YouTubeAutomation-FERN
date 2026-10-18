@@ -298,6 +298,47 @@ def main() -> int:
     else:
         content_reason = ""
     have_meta = len(scenes_meta) == len(plan_rows) and bool(plan_rows)
+
+    # In opt-in demo mode, check not only the plan labels but the signature
+    # drawing elements recorded by the composer for each rendered scene.
+    demo_cfg = plan.get("illustration_demo", {})
+    demo_requested = isinstance(demo_cfg, dict) and demo_cfg.get("enabled") is True
+    demo_specs = {
+        "rejected_judges": {"illus:gradebook", "illus:orgchart", "illus:score_dial"},
+        "two_dials": {"illus:danger_gauge", "illus:ration_valve"},
+        "frosted_score": {"illus:sealed_card", "illus:frosted_pane", "illus:stamp_final"},
+    }
+    demo_plan_rows = [
+        (i, row, str(row.get("illustration_demo_art") or
+                      (row.get("chalk") or {}).get("art") or ""))
+        for i, row in enumerate(plan_rows)
+    ]
+    if demo_requested:
+        for art_name in demo_specs:
+            occurrences = [item for item in demo_plan_rows if item[2] == art_name]
+            if len(occurrences) != 1:
+                issues.append(("FAIL", "illustration_demo",
+                               f"expected exactly one {art_name} scene in the demo plan; found {len(occurrences)}"))
+        demo_meta_ok = have_meta and all(
+            isinstance(scenes_meta[i], dict) and isinstance(scenes_meta[i].get("elements"), list)
+            for i, _row, art_name in demo_plan_rows if art_name in demo_specs
+        )
+        if demo_meta_ok:
+            for i, _row, art_name in demo_plan_rows:
+                if art_name not in demo_specs:
+                    continue
+                meta = scenes_meta[i]
+                if meta.get("art") != art_name:
+                    issues.append(("FAIL", "illustration_demo",
+                                   f"scene {i + 1}: plan requested {art_name}, renderer reported {meta.get('art')!r}"))
+                emitted = {str(element.get("tag")) for element in meta.get("elements", [])
+                           if isinstance(element, dict) and element.get("tag")}
+                absent = sorted(demo_specs[art_name] - emitted)
+                if absent:
+                    issues.append(("FAIL", "illustration_demo",
+                                   f"scene {i + 1} ({art_name}) did not emit its signature elements: {', '.join(absent)}"))
+    else:
+        demo_meta_ok = False
     pen_meta_ok = have_meta and all(isinstance(m, dict) and _finite_number(m.get("pen_busy_until")) for m in scenes_meta)
     fit_meta_ok = have_meta and all(isinstance(m, dict) and isinstance(m.get("fits"), bool) for m in scenes_meta)
     audio_ok = bool(a.get("present"))
@@ -316,6 +357,13 @@ def main() -> int:
         ("audio_len", "audio length equals video length", audio_ok, audio_blocked_reason),
         ("sfx", "effects level is finite and under the narration", sound_ok, sound_blocked_reason),
     ]
+    if demo_requested:
+        catalog.append((
+            "illustration_demo",
+            "all three hand-composed drawings were emitted by the renderer",
+            demo_meta_ok,
+            "renderer report lacks per-scene element evidence",
+        ))
     checks = classify_checks(catalog, issues)
     counts = {key: sum(1 for check in checks if check["status"] == key)
               for key in ("PASS", "WARNING", "FAIL", "BLOCKED")}
