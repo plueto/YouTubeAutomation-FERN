@@ -56,6 +56,29 @@ jobs:
             --out output/preview/fern_chalk_style_test.mp4 \
             --size 1280x720 --fps 24 --mood mysterious --force
 
+      - name: Prepare hand-composed illustration demo narration
+        run: |
+          mkdir -p output/preview/illustration-demo
+          python -c "from moduli.chalk_voice import synthesize_espeak; print(synthesize_espeak('tests/fixtures/chalk_illustration_demo.txt', 'output/preview/illustration-demo/narration.mp3'))"
+
+      - name: Render and strictly QA opt-in hand-composed illustrations
+        run: |
+          python tools/preview_chalkboard.py \
+            --duration 60 \
+            --script tests/fixtures/chalk_illustration_demo.txt \
+            --audio output/preview/illustration-demo/narration.mp3 \
+            --output output/preview/illustration-demo/fern_chalk_illustration_demo.mp4 \
+            --illustration-demo --strict-quality
+
+      - name: Upload illustration demo evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fern-chalk-illustration-demo
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            output/preview/illustration-demo/**
       - name: Upload preview, scene plan, report, and contact sheets
         if: always()
         uses: actions/upload-artifact@v4
