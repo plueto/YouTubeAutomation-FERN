@@ -810,7 +810,8 @@ def compose_program(plan: dict[str, Any], *, seed: int = 0, max_pages: int = 3) 
                 cam.append(CamKey(e_end, cx0, cy0, 1.0))
         scene_meta.append({
             "scene": i + 1, "start": round(t0, 3), "end": round(t1, 3), "page": page, "transition_in": trans[i],
-            "layout": layout, "motifs": spec.motifs, "labels": spec.labels, "title": spec.title,
+            "layout": layout, "art": str(ch.get("art") or "") or None,
+            "motifs": spec.motifs, "labels": spec.labels, "title": spec.title,
             "strokes": len(prog.strokes) - n_strokes0, "pen_busy_until": round(last_end, 3),
             "pen_speedup": round(k, 2), "anchor_pull": round(pull, 2), "fits": bool(ok), "pacing": pacing, "detail": detail, "word_timing": wsrc, "camera": style,
             "first_stroke": round(prog.strokes[n_strokes0].t0, 3) if len(prog.strokes) > n_strokes0 else None,
