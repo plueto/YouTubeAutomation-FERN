@@ -73,7 +73,7 @@ def two_dials(spec: SceneSpec):
 
     Danger: a gauge whose needle has swung into a crosshatched zone. Effort: a tank labelled MODEL feeding a
     half-closed valve that lets only a thin trickle reach a figure at the end of the pipe - rationing.
-    Anchors: gauge ('dangerous'), valve ('effort'), person ('you', last word).
+    Anchors: gauge ('dangerous'), valve ('effort'), person (the final 'on you' phrase).
     """
     s = spec
     els: list[Element] = []
