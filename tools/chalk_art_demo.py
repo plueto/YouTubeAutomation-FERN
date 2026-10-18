@@ -255,6 +255,9 @@ def apply_illustration_overrides(plan: dict[str, Any], max_window_scenes: int = 
             result_rows.append(copy.deepcopy(row))
 
     plan["scenes"] = result_rows
+    # The scene list may shrink when adjacent beats are merged; keep the
+    # top-level summary consistent with the actual post-override plan.
+    plan["scene_count"] = len(result_rows)
     plan["illustration_demo"] = {
         "enabled": True,
         "placements": sorted(placements, key=lambda p: p["source_scenes"][0]),
