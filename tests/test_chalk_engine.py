@@ -855,6 +855,10 @@ class IllustrationDemoIntegrationTests(unittest.TestCase):
         # Exercise the actual composer too: each opt-in art must resolve to its registered builder.
         program = compose_program(plan, seed=11)
         self.assertGreater(len(program.strokes), 0)
+        emitted_tags = {stroke.tag for stroke in program.strokes}
+        self.assertIn("illus:gradebook", emitted_tags)
+        self.assertIn("illus:danger_gauge", emitted_tags)
+        self.assertIn("illus:sealed_card", emitted_tags)
 
     def test_demo_fails_closed_if_anchor_phrases_are_missing(self):
         plan = {
