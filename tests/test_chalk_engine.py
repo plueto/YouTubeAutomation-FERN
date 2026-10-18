@@ -830,7 +830,9 @@ class IllustrationDemoIntegrationTests(unittest.TestCase):
         self.assertEqual(set(by_art), {"rejected_judges", "two_dials", "frosted_score"})
         self.assertEqual(by_art["rejected_judges"]["source_scenes"], [1, 2])
         self.assertEqual(by_art["two_dials"]["source_scenes"], [3])
+        self.assertEqual(by_art["two_dials"]["anchors"]["person"], "on you")
         self.assertEqual(by_art["frosted_score"]["source_scenes"], [4, 5])
+        self.assertEqual(plan["scene_count"], len(plan["scenes"]))
 
         art_by_excerpt = {
             row.get("illustration_demo_art"): row
