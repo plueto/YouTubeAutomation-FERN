@@ -57,6 +57,7 @@ def _stft_power(x: np.ndarray, lo: float, hi: float, hop_s: float = 0.1) -> np.n
 
 
 def ebur128(wav: Path) -> dict:
+    """EBU R128 loudness of any audio/video file via ffmpeg."""
     r = subprocess.run(["ffmpeg", "-nostdin", "-hide_banner", "-i", str(wav), "-af", "ebur128=peak=true", "-f", "null", "-"],
                        capture_output=True, text=True)
     txt = r.stderr
@@ -167,7 +168,6 @@ def main() -> int:
         wav = out / f"{vn}.wav"
         cs.build_soundtrack(program, args.audio, args.music, duration, wav, music_volume=0.10, seed=5, gains=cs.SfxGains(**g), components=comp)
         results[vn] = {"gains_db": g, **measure(vn, comp, program, duration, wav)}
-    (out / "metrics.json").write_text(json.dumps(results, indent=2), encoding="utf-8")
     if args.video:
         from moduli.montaggio import _filtro_loudnorm
         a, b = (float(x) for x in args.clip.split(":"))
@@ -176,6 +176,8 @@ def main() -> int:
             subprocess.run(["ffmpeg", "-v", "error", "-y", "-nostdin", "-ss", str(a), "-t", str(b - a), "-i", args.video, "-ss", str(a), "-t", str(b - a),
                             "-i", str(out / f"{vn}.wav"), "-map", "0:v:0", "-map", "1:a:0", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
                             "-af", _filtro_loudnorm(), "-c:a", "aac", "-b:a", "160k", "-ar", "44100", "-ac", "2", str(clip)], check=True)
+            results[vn]["delivered_clip_loudness"] = ebur128(clip)       # what the viewer actually gets (after loudnorm)
+    (out / "metrics.json").write_text(json.dumps(results, indent=2), encoding="utf-8")
     print(json.dumps({k: {"gains": v["gains_db"], "stoi_full": (v["intelligibility_proxy"]["full_mix"] or {}).get("stoi"),
                           "ser_median_db": v["speech_to_effects_db"]["median"], "fx_vs_voice_db": v["effects_rms_vs_voice_db"],
                           "fx_peak_vs_voice_db": v["effects_peak_vs_voice_rms_db"], "lufs": v["mix_loudness"]["integrated_lufs"], "limiter_needed": v["mix_sum_peak_before_limiter"] > 0.97} for k, v in results.items()}, indent=1))

@@ -740,7 +740,8 @@ class SoundStemTests(unittest.TestCase):
         old = os.environ.pop("FERN_CHALK_SFX_DB", None)
         try:
             g = cs.default_gains()
-            self.assertTrue(all(abs(g.as_dict()[k] + 6.0) < 1e-9 for k in cs.STEM_ORDER))
+            for k in cs.STEM_ORDER:
+                self.assertAlmostEqual(g.as_dict()[k], -7.0 if k in ("tick", "tap") else -6.0, places=9, msg=k)
             self.assertEqual(g.music, 0.0)
             os.environ["FERN_CHALK_SFX_DB"] = "0"
             self.assertEqual(cs.default_gains().chalk, 0.0)
@@ -749,7 +750,8 @@ class SoundStemTests(unittest.TestCase):
             os.environ["FERN_CHALK_SFX_DB"] = "-9"
             self.assertEqual(cs.default_gains().tap, -9.0)
             os.environ["FERN_CHALK_SFX_DB"] = "nonsense"
-            self.assertEqual(cs.default_gains().tap, -6.0)
+            self.assertEqual(cs.default_gains().tap, -7.0)             # falls back to the shipped default
+            self.assertEqual(cs.default_gains().chalk, -6.0)
         finally:
             os.environ.pop("FERN_CHALK_SFX_DB", None)
             if old is not None:

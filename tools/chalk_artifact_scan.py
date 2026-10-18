@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import subprocess
 import sys
 from collections import defaultdict
@@ -88,6 +89,20 @@ def main() -> int:
         return 2
     plan = json.loads(plan_path.read_text(encoding="utf-8"))
     prog = compose_program(plan, seed=args.seed)
+    # The program is recomposed from the plan with the CURRENT code. It is only a valid description of this video
+    # if it matches what the renderer recorded for it - otherwise every program-based number would be about a
+    # different video (this exact mistake happened once: new code scanned against an old render).
+    rep_path = video.with_suffix(".chalk_report.json")
+    if rep_path.is_file():
+        recorded = [int(m["strokes"]) for m in json.loads(rep_path.read_text(encoding="utf-8")).get("scenes", [])]
+        recomposed = [int(m["strokes"]) for m in prog.meta["scenes"]]
+        if recorded == recomposed:
+            check("recomposed program matches the rendered video", "PASS", f"per-scene stroke counts equal ({sum(recomposed)} strokes)")
+        else:
+            check("recomposed program matches the rendered video", "FAIL",
+                  f"recorded {recorded} vs recomposed {recomposed}: run this scanner from the checkout that rendered the video; program-based results are INVALID")
+    else:
+        check("recomposed program matches the rendered video", "BLOCKED", f"{rep_path.name} not found; cannot verify the code version")
     probe = json.loads(subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height,r_frame_rate,nb_frames",
                                        "-of", "json", str(video)], capture_output=True, text=True).stdout)["streams"][0]
     w, h = int(probe["width"]), int(probe["height"])
@@ -228,6 +243,7 @@ def main() -> int:
                    "starts_at": round(v[4], 2), "ends_at": round(v[5], 2)}
             if tw is not None:
                 rec["word_at"] = round(tw, 2)
+                rec["start_minus_word_s"] = round(v[4] - tw, 2)       # < 0: drawn ahead of the word (anticipation)
                 rec["end_minus_word_s"] = round(v[5] - tw, 2)
                 rec["word_timing"] = wsrc
                 if abs(v[5] - tw) > 1.8:
@@ -237,7 +253,16 @@ def main() -> int:
         # pen activity: fraction of the scene during which something is being drawn
         busy = sum(min(t1, st.t1) - max(t0, st.t0) for st in prog.strokes if st.t0 < t1 and st.t1 > t0)
         meta = next((m for m in prog.meta["scenes"] if m["scene"] == si + 1), {})
+        scene_strokes = [st for st in prog.strokes if st.tag in g and t0 - 1e-6 <= st.t0 < t1 + 0.6 and any(abs(st.t0 - x[4]) < 30 for x in [g[st.tag]])]
+        ivs = sorted((st.t0, st.t1) for st in scene_strokes)
+        gaps, cursor_t = [], None
+        for a_, b_ in ivs:
+            if cursor_t is not None and a_ - cursor_t > 0.6:
+                gaps.append(round(a_ - cursor_t, 2))
+            cursor_t = b_ if cursor_t is None else max(cursor_t, b_)
+        moving_starts = sum(1 for st in scene_strokes if math.hypot(*[a - b for a, b in zip(eng.camera_at(st.t0)[:2], eng.camera_at(max(0, st.t0 - 1 / fps))[:2])]) * fps > 250)
         metrics["scenes"].append({
+            "pen_idle_gaps_over_0.6s": gaps, "strokes_started_while_camera_moving": moving_starts, "strokes_in_scene": len(scene_strokes),
             "scene": si + 1, "start": t0, "end": t1, "duration": round(t1 - t0, 2), "layout": row["chalk"]["layout"],
             "first_stroke": meta.get("first_stroke"), "last_stroke_end": round(last_end, 2), "finished_dwell_s": round(dwell, 2),
             "pen_busy_fraction": round(busy / max(t1 - t0, 1e-6), 2), "pen_speedup": meta.get("pen_speedup"), "anchor_pull": meta.get("anchor_pull"),

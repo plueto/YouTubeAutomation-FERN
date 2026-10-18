@@ -27,7 +27,7 @@
    "frame": "docs/qa/scan_baseline/measurements.json (captions[].letters_per_s)",
    "severity": "medium (WARNING: needs viewing at speed)",
    "cause": "text pen speed 700+48*cap px/s, then pen speed-up (up to x1.6) and anchor pull; measured 12.3-22.0 letters/s, median 15.5",
-   "fix": "",
+   "fix": "NOT ADOPTED. Trial of text pen speed x0.85 / x0.7 on the revised program: median 14.5 -> 14.0 / 12.7 letters/s, worst 22.5 -> 21.1 / 15.5, but scenes with <0.5 s dwell 3 -> 4 / 4 and no verified readability benefit; reverted per change-control rule. Needs a human to watch at speed.",
    "status": "needs-human-review",
    "verification": {}
   },

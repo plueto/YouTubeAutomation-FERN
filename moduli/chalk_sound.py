@@ -112,6 +112,10 @@ class SfxGains:
 
 
 DEFAULT_SFX_DB = -6.0
+# The chalk touch-down tick and the impact click are the sharpest transients. On the final program they sat
+# 0.2-0.3 dB above the -8 dB (re narration RMS) criterion at a uniform -6 dB, so those two get 1 dB more
+# (docs/qa/sound_lab_2). Only the shipped default has this; an explicit FERN_CHALK_SFX_DB is uniform.
+DEFAULT_EXTRA_DB = {"tick": -1.0, "tap": -1.0}
 
 
 def default_gains() -> SfxGains:
@@ -123,11 +127,12 @@ def default_gains() -> SfxGains:
     import os
     raw = os.environ.get("FERN_CHALK_SFX_DB", "").strip()
     try:
-        db = float(raw) if raw else DEFAULT_SFX_DB
+        explicit = float(raw) if raw else None
     except ValueError:
-        db = DEFAULT_SFX_DB
-    db = min(0.0, db)
-    return SfxGains(**{k: db for k in STEM_ORDER})
+        explicit = None
+    if explicit is not None:                       # an explicit setting is uniform and never positive
+        return SfxGains(**{k: min(0.0, explicit) for k in STEM_ORDER})
+    return SfxGains(**{k: DEFAULT_SFX_DB + DEFAULT_EXTRA_DB.get(k, 0.0) for k in STEM_ORDER})
 
 
 def render_sfx_stems(program: Any, duration: float, seed: int = 5) -> tuple[dict[str, np.ndarray], dict[str, Any]]:

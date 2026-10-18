@@ -1,0 +1,156 @@
+{
+  "A_original_levels": {
+    "gains_db": {},
+    "variant": "A_original_levels",
+    "intelligibility_proxy": {
+      "narration_plus_effects": {
+        "stoi": 0.9748,
+        "estoi": 0.9155
+      },
+      "narration_plus_music": {
+        "stoi": 0.9287,
+        "estoi": 0.7943
+      },
+      "full_mix": {
+        "stoi": 0.9148,
+        "estoi": 0.7528
+      }
+    },
+    "speech_to_effects_db": {
+      "median": 16.55,
+      "p10": 5.06,
+      "frames": 403
+    },
+    "speech_to_music_db": {
+      "median": 13.06,
+      "p10": 0.27
+    },
+    "effects_rms_vs_voice_db": -13.85,
+    "stems": {
+      "chalk": {
+        "rms_vs_voice_db": -10.52,
+        "peak_vs_voice_rms_db": 6.35
+      },
+      "body": {
+        "rms_vs_voice_db": -31.8,
+        "peak_vs_voice_rms_db": -16.94
+      },
+      "tick": {
+        "rms_vs_voice_db": -15.77,
+        "peak_vs_voice_rms_db": -1.72
+      },
+      "erase": {
+        "rms_vs_voice_db": -19.05,
+        "peak_vs_voice_rms_db": -4.56
+      },
+      "thump": {
+        "rms_vs_voice_db": -13.97,
+        "peak_vs_voice_rms_db": -3.72
+      },
+      "tap": {
+        "rms_vs_voice_db": -16.32,
+        "peak_vs_voice_rms_db": -1.8
+      },
+      "whoosh": {
+        "rms_vs_voice_db": -19.94,
+        "peak_vs_voice_rms_db": -4.59
+      }
+    },
+    "effects_transient_prominence_db": 10.25,
+    "effects_peak_vs_voice_rms_db": 3.83,
+    "chalk_vs_music_db_in_chalk_band": 15.34,
+    "mix_loudness": {
+      "integrated_lufs": -21.1,
+      "range_lu": 1.7,
+      "true_peak_dbtp": -0.3
+    },
+    "mix_sample_peak_written_file": 0.967,
+    "mix_sum_peak_before_limiter": 0.967,
+    "delivered_clip_loudness": {
+      "integrated_lufs": -16.1,
+      "range_lu": 0.9,
+      "true_peak_dbtp": -4.3
+    }
+  },
+  "B2_shipped_default": {
+    "gains_db": {
+      "chalk": -6,
+      "body": -6,
+      "erase": -6,
+      "whoosh": -6,
+      "thump": -6,
+      "tick": -7,
+      "tap": -7
+    },
+    "variant": "B2_shipped_default",
+    "intelligibility_proxy": {
+      "narration_plus_effects": {
+        "stoi": 0.9913,
+        "estoi": 0.9668
+      },
+      "narration_plus_music": {
+        "stoi": 0.9287,
+        "estoi": 0.7943
+      },
+      "full_mix": {
+        "stoi": 0.9255,
+        "estoi": 0.7819
+      }
+    },
+    "speech_to_effects_db": {
+      "median": 22.66,
+      "p10": 11.11,
+      "frames": 403
+    },
+    "speech_to_music_db": {
+      "median": 13.06,
+      "p10": 0.27
+    },
+    "effects_rms_vs_voice_db": -19.87,
+    "stems": {
+      "chalk": {
+        "rms_vs_voice_db": -16.52,
+        "peak_vs_voice_rms_db": 0.35
+      },
+      "body": {
+        "rms_vs_voice_db": -37.8,
+        "peak_vs_voice_rms_db": -22.94
+      },
+      "tick": {
+        "rms_vs_voice_db": -22.77,
+        "peak_vs_voice_rms_db": -8.72
+      },
+      "erase": {
+        "rms_vs_voice_db": -25.05,
+        "peak_vs_voice_rms_db": -10.56
+      },
+      "thump": {
+        "rms_vs_voice_db": -19.97,
+        "peak_vs_voice_rms_db": -9.72
+      },
+      "tap": {
+        "rms_vs_voice_db": -23.32,
+        "peak_vs_voice_rms_db": -8.8
+      },
+      "whoosh": {
+        "rms_vs_voice_db": -25.94,
+        "peak_vs_voice_rms_db": -10.59
+      }
+    },
+    "effects_transient_prominence_db": 10.27,
+    "effects_peak_vs_voice_rms_db": -2.17,
+    "chalk_vs_music_db_in_chalk_band": 9.3,
+    "mix_loudness": {
+      "integrated_lufs": -21.4,
+      "range_lu": 1.8,
+      "true_peak_dbtp": -0.3
+    },
+    "mix_sample_peak_written_file": 0.967,
+    "mix_sum_peak_before_limiter": 0.967,
+    "delivered_clip_loudness": {
+      "integrated_lufs": -16.3,
+      "range_lu": 0.9,
+      "true_peak_dbtp": -4.2
+    }
+  }
+}
