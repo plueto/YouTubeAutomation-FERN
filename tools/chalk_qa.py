@@ -1,25 +1,23 @@
 #!/usr/bin/env python3
 """Quality assurance for a rendered chalkboard video.
 
-Usage:  python tools/chalk_qa.py output/preview/fern_chalk_preview.mp4 [--out output/preview/qa]
+Usage:
+    python tools/chalk_qa.py video.mp4 [--out qa_dir] [--strict]
 
-Reads ``<video>.scene_plan.json`` and ``<video>.chalk_report.json`` written by the renderer and:
-
-* extracts, for every scene, a *finished-state* frame (just before the camera leaves) and a
-  *mid-draw* frame, then builds a labelled contact sheet and a per-scene strip
-* flags: empty or nearly empty scenes, scenes whose pen was still busy when the scene ended,
-  drawings that start long before/after the word that triggers them, blank frames,
-  missing/NaN/clipped audio, and an audio/video duration mismatch
-* writes ``qa_report.json`` and prints a PASS/WARN/FAIL summary (exit code 1 on FAIL)
+The JSON report distinguishes PASS, WARNING, FAIL, and BLOCKED. A blocked check is
+never reported as passed. Default mode exits nonzero on a failed check; strict mode
+also exits nonzero when any required check is blocked because its inputs were absent.
 """
 from __future__ import annotations
 
 import argparse
 import json
-import subprocess
+import math
 import re
+import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -28,6 +26,56 @@ if str(ROOT) not in sys.path:
 from moduli.ffmpeg_utils import ffmpeg_path, ffprobe_path
 import cv2
 import numpy as np
+
+
+Issue = tuple[str, str, str]
+CheckSpec = tuple[str, str, bool, str]
+
+
+def _finite_number(value: Any) -> bool:
+    try:
+        return math.isfinite(float(value))
+    except (TypeError, ValueError, OverflowError):
+        return False
+
+
+def classify_checks(catalog: list[CheckSpec], issues: list[Issue]) -> list[dict[str, str]]:
+    """Classify every declared check without treating unavailable inputs as a pass."""
+    checks: list[dict[str, str]] = []
+    for key, name, can_run, blocked_reason in catalog:
+        mine = [(level, message) for level, category, message in issues if category == key]
+        failures = [message for level, message in mine if level == "FAIL"]
+        warnings = [message for level, message in mine if level in ("WARN", "WARNING")]
+        if failures:
+            status, detail = "FAIL", "; ".join(failures)
+        elif not can_run:
+            status, detail = "BLOCKED", blocked_reason or "required input was unavailable"
+        elif warnings:
+            status, detail = "WARNING", "; ".join(warnings)
+        else:
+            status, detail = "PASS", "executed; criterion met"
+        checks.append({"check": name, "status": status, "detail": detail})
+    return checks
+
+
+def overall_status(checks: list[dict[str, str]]) -> str:
+    statuses = {check["status"] for check in checks}
+    if "FAIL" in statuses:
+        return "FAIL"
+    if "BLOCKED" in statuses:
+        return "BLOCKED"
+    if "WARNING" in statuses:
+        return "WARNING"
+    return "PASS" if checks and statuses == {"PASS"} else "BLOCKED"
+
+
+def qa_exit_code(checks: list[dict[str, str]], strict: bool = False) -> int:
+    """Fail for any FAIL; strict mode also fails when required checks are BLOCKED."""
+    if any(c["status"] == "FAIL" for c in checks):
+        return 1
+    if strict and any(c["status"] == "BLOCKED" for c in checks):
+        return 1
+    return 0
 
 
 def _run(cmd: list[str]) -> bytes:
@@ -49,18 +97,30 @@ def _ink_fraction(frame: np.ndarray) -> float:
     return float((g > 95).mean())
 
 
-def audio_stats(video: Path) -> dict:
-    raw = subprocess.run([ffmpeg_path(), "-v", "error", "-nostdin", "-i", str(video), "-vn", "-ac", "1", "-ar", "22050", "-f", "f32le", "-"],
-                         capture_output=True).stdout
+def audio_stats(video: Path) -> dict[str, Any]:
+    raw = subprocess.run(
+        [ffmpeg_path(), "-v", "error", "-nostdin", "-i", str(video), "-vn", "-ac", "1", "-ar", "22050",
+         "-f", "f32le", "-"], capture_output=True).stdout
     x = np.frombuffer(raw, np.float32) if raw else np.zeros(0, np.float32)
     if len(x) == 0:
-        return {"present": False}
-    return {"present": True, "nan": int(np.isnan(x).sum()), "peak": round(float(np.nanmax(np.abs(x))), 3),
-            "clipped_samples": int((np.abs(x) >= 0.999).sum()), "rms": round(float(np.sqrt(np.nanmean(x * x))), 4),
-            "seconds": round(len(x) / 22050, 2)}
+        return {"present": False, "seconds": 0.0}
+    finite = np.isfinite(x)
+    clean = x[finite]
+    peak = float(np.max(np.abs(clean))) if len(clean) else None
+    rms = float(np.sqrt(np.mean(clean * clean))) if len(clean) else None
+    return {
+        "present": True,
+        "nan": int(np.isnan(x).sum()),
+        "infinite": int(np.isinf(x).sum()),
+        "nonfinite_samples": int((~finite).sum()),
+        "peak": round(peak, 4) if peak is not None else None,
+        "clipped_samples": int((np.abs(clean) >= 0.999).sum()),
+        "rms": round(rms, 4) if rms is not None else None,
+        "seconds": round(len(x) / 22050, 2),
+    }
 
 
-def _probe_video(video: Path) -> dict:
+def _probe_video(video: Path) -> dict[str, Any]:
     """Probe with ffprobe when available; fall back to ffmpeg metadata output."""
     cmd = [ffprobe_path(), "-v", "error",
            "-show_entries", "stream=codec_type,width,height,r_frame_rate,duration:format=duration",
@@ -90,56 +150,102 @@ def _probe_video(video: Path) -> dict:
         return {"streams": streams, "format": {"duration": str(duration)}}
 
 
+def _load_json(path: Path, default: dict[str, Any], missing: list[str]) -> dict[str, Any]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8-sig"))
+        if not isinstance(value, dict):
+            raise ValueError("top-level JSON value is not an object")
+        return value
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        missing.append(f"{path.name}: {exc}")
+        return default
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("video")
     ap.add_argument("--out", default=None)
     ap.add_argument("--thumb", type=int, default=480, help="thumbnail width in the contact sheet")
+    ap.add_argument("--strict", action="store_true",
+                    help="also return exit code 1 if any required QA check is BLOCKED")
     args = ap.parse_args()
     video = Path(args.video)
+    if not video.is_file():
+        print(f"ERROR: video does not exist: {video}", file=sys.stderr)
+        return 2
     out = Path(args.out) if args.out else video.parent / "qa"
     out.mkdir(parents=True, exist_ok=True)
-    plan = json.loads(video.with_suffix(".scene_plan.json").read_text(encoding="utf-8"))
-    report = json.loads(video.with_suffix(".chalk_report.json").read_text(encoding="utf-8"))
+    missing: list[str] = []
+    plan = _load_json(video.with_suffix(".scene_plan.json"), {"scenes": []}, missing)
+    report = _load_json(video.with_suffix(".chalk_report.json"), {}, missing)
+    plan_rows = plan.get("scenes")
+    if not isinstance(plan_rows, list):
+        plan_rows = []
+        missing.append("scene plan has no scenes array")
     probe = _probe_video(video)
-    vs = next(s for s in probe["streams"] if s["codec_type"] == "video")
+    vs = next((s for s in probe.get("streams", []) if s.get("codec_type") == "video"), None)
+    if vs is None:
+        print("ERROR: video stream could not be found.", file=sys.stderr)
+        return 2
     w, h = int(vs["width"]), int(vs["height"])
     vdur = float(probe["format"]["duration"])
-    issues: list[tuple[str, str]] = []
-
+    issues: list[Issue] = []
     thumbs, rows = [], []
     scenes_meta = report.get("scenes", [])
-    for i, row in enumerate(plan["scenes"]):
-        t0, t1 = float(row["start_seconds"]), float(row["end_seconds"])
-        meta = scenes_meta[i] if i < len(scenes_meta) else {}
+    if not isinstance(scenes_meta, list):
+        scenes_meta = []
+
+    frames_ok = 0
+    for i, row in enumerate(plan_rows):
+        try:
+            t0, t1 = float(row["start_seconds"]), float(row["end_seconds"])
+        except (KeyError, TypeError, ValueError):
+            missing.append(f"scene {i + 1} has invalid start/end times")
+            continue
+        meta = scenes_meta[i] if i < len(scenes_meta) and isinstance(scenes_meta[i], dict) else {}
         busy = meta.get("pen_busy_until")
-        t_end = max(t0 + 0.2, min(t1 - 0.3, (busy + 0.2) if busy else t1 - 0.5))
+        if _finite_number(busy):
+            t_end = max(t0 + 0.2, min(t1 - 0.3, float(busy) + 0.2))
+        else:
+            t_end = max(t0 + 0.2, min(t1 - 0.3, t1 - 0.5))
         t_mid = t0 + (t_end - t0) * 0.45
         f_end, f_mid = _frame_at(video, t_end, w, h), _frame_at(video, t_mid, w, h)
-        cov = _ink_fraction(f_end) if f_end is not None else 0.0
-        ch = row.get("chalk", {})
-        info = {"scene": i + 1, "t": [round(t0, 2), round(t1, 2)], "layout": ch.get("layout"), "ink_fraction_end": round(cov, 4),
-                "pen_busy_until": meta.get("pen_busy_until"), "pacing": meta.get("pacing"), "detail": meta.get("detail"),
-                "word_timing": meta.get("word_timing")}
-        if cov < 0.004:
-            issues.append(("FAIL", f"scene {i + 1} ({ch.get('layout')}): nearly empty at its end (ink {cov:.3%})"))
-        elif cov < 0.012:
-            issues.append(("WARN", f"scene {i + 1} ({ch.get('layout')}): sparse at its end (ink {cov:.3%})"))
-        if meta.get("pen_busy_until") and meta["pen_busy_until"] > t1 - 0.12:
-            issues.append(("WARN", f"scene {i + 1}: pen still drawing at scene end ({meta['pen_busy_until']:.2f}s vs {t1:.2f}s)"))
-        if meta and not meta.get("fits", True):
-            issues.append(("WARN", f"scene {i + 1}: could not fit its drawing without hurrying the pen ({meta.get('pacing')})"))
+        if f_end is not None:
+            frames_ok += 1
+            cov: float | None = _ink_fraction(f_end)
+        else:
+            cov = None
+        ch = row.get("chalk", {}) if isinstance(row.get("chalk"), dict) else {}
+        layout = ch.get("art") or ch.get("layout")
+        info = {
+            "scene": i + 1, "t": [round(t0, 2), round(t1, 2)], "layout": layout,
+            "ink_fraction_end": round(cov, 4) if cov is not None else None,
+            "frame_end_ok": f_end is not None,
+            "pen_busy_until": meta.get("pen_busy_until"), "pacing": meta.get("pacing"),
+            "detail": meta.get("detail"), "word_timing": meta.get("word_timing"),
+            "illustration_demo_art": row.get("illustration_demo_art") or ch.get("art"),
+        }
+        if cov is not None:
+            if cov < 0.004:
+                issues.append(("FAIL", "content", f"scene {i + 1} ({layout}): nearly empty at its end (ink {cov:.3%})"))
+            elif cov < 0.012:
+                issues.append(("WARNING", "content", f"scene {i + 1} ({layout}): sparse at its end (ink {cov:.3%})"))
+        if _finite_number(busy) and float(busy) > t1 - 0.12:
+            issues.append(("WARNING", "pen_end", f"scene {i + 1}: pen still drawing at scene end ({float(busy):.2f}s vs {t1:.2f}s)"))
+        if meta.get("fits") is False:
+            issues.append(("WARNING", "fits", f"scene {i + 1}: could not fit its drawing without hurrying the pen ({meta.get('pacing')})"))
         rows.append(info)
         for tag, fr in (("mid", f_mid), ("end", f_end)):
             if fr is not None:
-                label = f"{i + 1}.{tag} {ch.get('layout')} {t_end if tag == 'end' else t_mid:.1f}s"
+                t_label = t_end if tag == "end" else t_mid
+                label = f"{i + 1}.{tag} {layout} {t_label:.1f}s"
                 tt = cv2.resize(fr, (args.thumb, int(args.thumb * h / w)), interpolation=cv2.INTER_AREA)
                 cv2.rectangle(tt, (0, 0), (tt.shape[1], 20), (0, 0, 0), -1)
                 cv2.putText(tt, label, (6, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (210, 230, 220), 1, cv2.LINE_AA)
                 thumbs.append(tt)
                 cv2.imwrite(str(out / f"scene{i + 1:02d}_{tag}.png"), fr)
 
-    # contact sheet: two columns (mid | end) per scene, wrapped into sheets of 4 scenes
+    # Contact sheet: mid/end frames paired by scene, wrapped into sheets of 4 scenes.
     per = 4
     for s in range(0, len(thumbs), per * 2):
         chunk = thumbs[s:s + per * 2]
@@ -148,11 +254,7 @@ def main() -> int:
         rowsimg = [cv2.hconcat(chunk[j:j + 2]) for j in range(0, len(chunk), 2)]
         cv2.imwrite(str(out / f"contact_{s // (per * 2) + 1}.png"), cv2.vconcat(rowsimg))
 
-    # anchor audit: how far is each drawing's first stroke from the spoken word that triggers it?
-    anchor_offsets: list[float] = []
-    for meta in scenes_meta:
-        pass
-    # frame-level blank detection across the whole video
+    # Frame-level blank detection across the whole video.
     blank = 0
     sampled = 0
     for t in np.arange(0.5, vdur - 0.2, max(0.5, vdur / 60)):
@@ -163,38 +265,87 @@ def main() -> int:
         if float(fr.mean()) < 6.0:
             blank += 1
     if blank:
-        issues.append(("WARN", f"{blank}/{sampled} sampled frames are nearly black"))
+        issues.append(("WARNING", "blank", f"{blank}/{sampled} sampled frames are nearly black"))
 
     a = audio_stats(video)
     if not a.get("present"):
-        issues.append(("FAIL", "video has no audio stream"))
+        issues.append(("FAIL", "audio_present", "video has no decodable audio samples"))
     else:
-        if a["nan"]:
-            issues.append(("FAIL", f"audio contains {a['nan']} NaN samples"))
-        if a["clipped_samples"] > 50:
-            issues.append(("WARN", f"audio clips ({a['clipped_samples']} samples)"))
-        if abs(a["seconds"] - vdur) > 0.3:
-            issues.append(("WARN", f"audio length {a['seconds']}s differs from video {vdur:.2f}s"))
+        if a.get("nan", 0):
+            issues.append(("FAIL", "audio_nan", f"audio contains {a['nan']} NaN samples"))
+        if a.get("infinite", 0):
+            issues.append(("FAIL", "audio_finite", f"audio contains {a['infinite']} infinite samples"))
+        if a.get("clipped_samples", 0) > 50:
+            issues.append(("WARNING", "audio_clip", f"audio clips ({a['clipped_samples']} samples)"))
+        if _finite_number(a.get("seconds")) and abs(float(a["seconds"]) - vdur) > 0.3:
+            issues.append(("WARNING", "audio_len", f"audio length {a['seconds']}s differs from video {vdur:.2f}s"))
+
     sound = report.get("sound", {})
+    if not isinstance(sound, dict):
+        sound = {}
     if sound and not sound.get("disabled"):
         ratio = sound.get("sfx_rms_vs_voice")
-        if ratio is None or ratio != ratio:
-            issues.append(("FAIL", "sound-effects level is NaN"))
-        elif ratio > 0.5:
-            issues.append(("WARN", f"sound effects are loud relative to the narration ({ratio})"))
+        if not _finite_number(ratio):
+            issues.append(("FAIL", "sfx", f"sound-effects ratio must be finite; received {ratio!r}"))
+        elif float(ratio) > 0.5:
+            issues.append(("WARNING", "sfx", f"sound effects are loud relative to the narration ({ratio})"))
 
-    result = {"video": str(video), "duration": round(vdur, 2), "resolution": [w, h], "fps": vs["r_frame_rate"],
-              "audio": a, "scenes": rows, "issues": [{"level": l, "message": m} for l, m in issues]}
+    plan_ok = bool(plan_rows)
+    if not plan_ok:
+        content_reason = "no valid scene-plan rows"
+    elif frames_ok != len(plan_rows):
+        content_reason = f"only {frames_ok}/{len(plan_rows)} scene-end frames could be extracted"
+    else:
+        content_reason = ""
+    have_meta = len(scenes_meta) == len(plan_rows) and bool(plan_rows)
+    pen_meta_ok = have_meta and all(isinstance(m, dict) and _finite_number(m.get("pen_busy_until")) for m in scenes_meta)
+    fit_meta_ok = have_meta and all(isinstance(m, dict) and isinstance(m.get("fits"), bool) for m in scenes_meta)
+    audio_ok = bool(a.get("present"))
+    sound_ok = bool(sound) and not sound.get("disabled")
+    sound_blocked_reason = "no sound report was available or sound was disabled"
+    audio_blocked_reason = "no audio stream to analyse"
+    catalog: list[CheckSpec] = [
+        ("content", "every scene has visible content at its end", plan_ok and frames_ok == len(plan_rows), content_reason),
+        ("pen_end", "the pen finishes before each scene ends", pen_meta_ok, "per-scene pen timing metadata is incomplete"),
+        ("fits", "each scene fits without hurrying the pen", fit_meta_ok, "per-scene fits metadata is incomplete"),
+        ("blank", "no near-black frames", sampled > 0, "no frame could be sampled"),
+        ("audio_present", "the video has an audio stream", True, ""),
+        ("audio_nan", "audio has no NaN samples", audio_ok, audio_blocked_reason),
+        ("audio_finite", "audio has no infinite samples", audio_ok, audio_blocked_reason),
+        ("audio_clip", "audio does not clip", audio_ok, audio_blocked_reason),
+        ("audio_len", "audio length equals video length", audio_ok, audio_blocked_reason),
+        ("sfx", "effects level is finite and under the narration", sound_ok, sound_blocked_reason),
+    ]
+    checks = classify_checks(catalog, issues)
+    counts = {key: sum(1 for check in checks if check["status"] == key)
+              for key in ("PASS", "WARNING", "FAIL", "BLOCKED")}
+    worst = overall_status(checks)
+    result = {
+        "video": str(video), "duration": round(vdur, 2), "resolution": [w, h],
+        "fps": vs.get("r_frame_rate"), "audio": a, "scenes": rows,
+        "checks": checks,
+        "issues": [{"level": level, "category": category, "message": message}
+                   for level, category, message in issues],
+        "missing_inputs": missing,
+        "counts": counts,
+        "overall_status": worst,
+        "strict_mode": bool(args.strict),
+    }
     (out / "qa_report.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
-    worst = "FAIL" if any(l == "FAIL" for l, _ in issues) else "WARN" if issues else "PASS"
-    print(f"QA {worst}: {video.name}  {w}x{h}  {vdur:.1f}s  audio rms {a.get('rms')} peak {a.get('peak')}")
-    for r in rows:
-        print(f"  scene {r['scene']:>2} {r['t'][0]:6.1f}-{r['t'][1]:<6.1f} {str(r['layout']):<10} ink {r['ink_fraction_end']:.3%}  detail {r['detail']}  {r['pacing'] or ''}")
-    for l, m in issues:
-        print(f"  [{l}] {m}")
+    print(f"QA {worst}: {video.name}  {w}x{h}  {vdur:.1f}s | {counts}")
+    if missing:
+        for item in missing:
+            print(f"  [BLOCKED] input: {item}")
+    for check in checks:
+        print(f"  [{check['status']:<7}] {check['check']}: {check['detail']}")
+    for row in rows:
+        ink = f"{row['ink_fraction_end']:.3%}" if row["ink_fraction_end"] is not None else "N/A"
+        print(f"  scene {row['scene']:>2} {row['t'][0]:6.1f}-{row['t'][1]:<6.1f} {str(row['layout']):<16} ink {ink}  detail {row['detail']}  {row['pacing'] or ''}")
     print(f"  contact sheets in {out}")
-    return 1 if worst == "FAIL" else 0
+    if args.strict and counts["BLOCKED"]:
+        print("  strict QA failed: blocked checks are not passes", file=sys.stderr)
+    return qa_exit_code(checks, strict=args.strict)
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())
