@@ -24,10 +24,18 @@ class ChalkSoundTuningTests(unittest.TestCase):
         self.assertEqual(gains.music, 0.0)
 
     def test_environment_override_can_lower_but_never_boost(self):
-        for raw, expected in (("-9", -9.0), ("0", 0.0), ("+4", 0.0), ("invalid", -6.0)):
+        for raw, expected in (("-9", -9.0), ("0", 0.0), ("+4", 0.0)):
             with self.subTest(raw=raw), patch.dict(os.environ, {"FERN_CHALK_SFX_DB": raw}):
                 gains = sound.default_gains()
                 self.assertTrue(all(gains.as_dict()[name] == expected for name in sound.STEM_ORDER))
+
+        with patch.dict(os.environ, {"FERN_CHALK_SFX_DB": "invalid"}):
+            gains = sound.default_gains()
+        default_profile = {
+            "chalk": -6.0, "body": -6.0, "tick": -7.0, "erase": -6.0,
+            "thump": -6.0, "tap": -7.0, "whoosh": -6.0, "music": 0.0,
+        }
+        self.assertEqual(gains.as_dict(), default_profile)
 
     def test_per_stem_gain_is_applied_to_the_rendered_effect(self):
         stems = {name: np.zeros(64, dtype=np.float32) for name in sound.STEM_ORDER}
