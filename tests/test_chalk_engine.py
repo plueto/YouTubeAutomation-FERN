@@ -905,6 +905,15 @@ class QaClassificationTests(unittest.TestCase):
         self.assertEqual(overall_status(checks), "WARNING")
         self.assertEqual(qa_exit_code(checks, strict=False), 0)
 
+    def test_stale_scene_count_summary_is_a_failure(self):
+        catalog = [("scene_count", "declared scene count matches the scene list", True, "")]
+        checks = classify_checks(
+            catalog,
+            [("FAIL", "scene_count", "scene_plan.json declares 5 scenes but contains 4 rows")],
+        )
+        self.assertEqual(checks[0]["status"], "FAIL")
+        self.assertEqual(qa_exit_code(checks, strict=False), 1)
+
 
 if __name__ == "__main__":
     unittest.main()
