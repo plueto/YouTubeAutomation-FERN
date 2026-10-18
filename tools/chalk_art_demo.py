@@ -11,6 +11,7 @@ does not render a video or change the director's defaults.
 """
 from __future__ import annotations
 
+import argparse
 import copy
 import json
 import re
@@ -260,13 +261,20 @@ def apply_illustration_overrides(plan: dict[str, Any], max_window_scenes: int = 
 
 
 def main() -> int:
-    if len(sys.argv) != 3:
-        print("Usage: python tools/chalk_art_demo.py plan.json out_plan.json", file=sys.stderr)
-        return 2
-    source, destination = Path(sys.argv[1]), Path(sys.argv[2])
+    parser = argparse.ArgumentParser(
+        description="Apply the three hand-composed chalk scenes to semantically matching narration windows."
+    )
+    parser.add_argument("plan", help="input scene-plan JSON")
+    parser.add_argument("out_plan", help="output scene-plan JSON")
+    parser.add_argument(
+        "--max-window-scenes", type=int, default=3,
+        help="maximum adjacent source scenes to combine to satisfy one composition's anchors (default: 3)",
+    )
+    args = parser.parse_args()
+    source, destination = Path(args.plan), Path(args.out_plan)
     try:
         plan = json.loads(source.read_text(encoding="utf-8-sig"))
-        placements = apply_illustration_overrides(plan)
+        placements = apply_illustration_overrides(plan, max_window_scenes=args.max_window_scenes)
     except (OSError, json.JSONDecodeError, ValueError, RuntimeError) as exc:
         print(f"Illustration demo failed: {exc}", file=sys.stderr)
         return 2
