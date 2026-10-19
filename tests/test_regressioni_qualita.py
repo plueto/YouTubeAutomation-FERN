@@ -53,41 +53,62 @@ class AudioConsegnaTests(unittest.TestCase):
             self.assertEqual(cmd[cmd.index("-ac") + 1], "2")
 
     def test_narrazione_normalizzata_dopo_il_tts(self):
-        """Il percorso moviepy non passa dal mux: la narrazione deve arrivargli
-        gia' al volume giusto."""
+        """La voce consegnata deve essere Kokoro George e normalizzata."""
         from moduli import audio
 
-        with patch.object(audio, "_kokoro_tts", return_value=False), \
-             patch.object(audio, "_edge_tts", return_value=True), \
+        with patch.object(audio, "_kokoro_tts", return_value=True) as kokoro, \
              patch.object(audio, "_audio_valido", return_value=True), \
              patch.object(audio, "_normalizza") as norm:
             audio.genera_audio("testo di prova", "out.mp3")
+        kokoro.assert_called_once_with("testo di prova", "out.mp3", "bm_george")
         norm.assert_called_once_with("out.mp3")
 
-    def test_edge_voice_preference_is_not_replaced_by_kokoro_default(self):
+    def test_voice_preferences_cannot_override_george(self):
+        """Saved preferences and environment choices cannot select a substitute."""
         from moduli import audio
 
         with patch.object(audio, "_load_voice", return_value="it-IT-DiegoNeural"), \
-             patch.object(audio, "_kokoro_tts") as kokoro, \
-             patch.object(audio, "_edge_tts", return_value=True) as edge, \
+             patch.object(audio, "_kokoro_tts", return_value=True) as kokoro, \
+             patch.object(audio, "_edge_tts") as edge, \
+             patch.object(audio, "_gtts") as gtts, \
              patch.object(audio, "_audio_valido", return_value=True), \
              patch.object(audio, "_normalizza"):
             audio.genera_audio("test narration", "out.mp3")
-        kokoro.assert_not_called()
-        self.assertEqual(edge.call_args.args[2], "it-IT-DiegoNeural")
+        kokoro.assert_called_once_with("test narration", "out.mp3", "bm_george")
+        edge.assert_not_called()
+        gtts.assert_not_called()
 
-    def test_explicit_kokoro_voice_remains_available(self):
+    def test_kokoro_failure_stops_without_substitute_voice(self):
+        """If George fails, fail loudly instead of silently changing voices."""
         from moduli import audio
 
-        with patch.object(audio, "KOKORO_VOICE", ""), \
-             patch.object(audio, "_load_voice", return_value="af_heart"), \
-             patch.object(audio, "_kokoro_tts", return_value=True) as kokoro, \
-             patch.object(audio, "_audio_valido", return_value=True), \
-             patch.object(audio, "_normalizza"), \
-             patch.object(audio, "_edge_tts") as edge:
-            audio.genera_audio("test narration", "out.mp3")
-        kokoro.assert_called_once_with("test narration", "out.mp3", "af_heart")
+        with patch.object(audio, "_kokoro_tts", return_value=False) as kokoro, \
+             patch.object(audio, "_edge_tts") as edge, \
+             patch.object(audio, "_gtts") as gtts:
+            with self.assertRaisesRegex(RuntimeError, "George-only TTS failed"):
+                audio.genera_audio("test narration", "out.mp3")
+        kokoro.assert_called_once_with("test narration", "out.mp3", "bm_george")
         edge.assert_not_called()
+        gtts.assert_not_called()
+
+    def test_chalk_sfx_stays_quiet_under_speech(self):
+        """Chalk effects remain below 1% of narration RMS while speech is active."""
+        import numpy as np
+        from types import SimpleNamespace
+        from moduli import chalk_sound
+
+        samples = int(3.0 * chalk_sound.SR)
+        narration = np.full(samples, 0.2, dtype=np.float32)
+        effects = np.full(samples, 0.1, dtype=np.float32)
+
+        with patch.object(chalk_sound, "decode_audio", return_value=narration), \
+             patch.object(chalk_sound, "render_sfx", return_value=(effects, {})), \
+             patch.object(chalk_sound, "write_wav"):
+            report = chalk_sound.build_soundtrack(
+                SimpleNamespace(cues=[]), "narration.mp3", None, 3.0, "mix.wav"
+            )
+
+        self.assertLess(report["sfx_rms_vs_voice"], 0.01)
 
     def test_ducking_graph_uses_voice_sidechain_music_curve_and_limiter(self):
         from moduli.montaggio import build_audio_filter_graph

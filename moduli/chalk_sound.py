@@ -100,7 +100,7 @@ def render_sfx(program: Any, duration: float, seed: int = 5) -> tuple[np.ndarray
         drawn_seconds += st.dur
         if st.length > 140:                      # chalk touching the board
             k = min(n - 1, a0)
-            ticks[k:k + int(0.006 * SR)] += 0.55
+            ticks[k:k + int(0.006 * SR)] += 0.12
     env = _smooth(env, 9.0)
 
     noise = rng.standard_normal(n).astype(np.float32)
@@ -110,7 +110,7 @@ def render_sfx(program: Any, duration: float, seed: int = 5) -> tuple[np.ndarray
     mod = 0.45 + 0.55 * np.clip(mod / 1.6, 0, 1)
     chalk = _bandpass(noise * env * mod, 1700, 7600) * 1.0
     body = _bandpass(noise * env, 420, 1400) * 0.16
-    tick_sig = _bandpass(rng.standard_normal(n).astype(np.float32) * _smooth(ticks, 2.0), 900, 5200) * 0.9
+    tick_sig = _bandpass(rng.standard_normal(n).astype(np.float32) * _smooth(ticks, 2.0), 900, 5200) * 0.35
     track = chalk + body + tick_sig
 
     # ---- eraser, impacts, whooshes
@@ -126,7 +126,7 @@ def render_sfx(program: Any, duration: float, seed: int = 5) -> tuple[np.ndarray
         swish = 0.55 + 0.45 * np.abs(np.sin(np.pi * passes * t))
         shape = np.clip(np.sin(np.pi * np.clip(t, 0, 1)), 0, None) ** 0.6
         seg = _bandpass(rng.standard_normal(a1 - a0).astype(np.float32), 220, 2600) * swish * shape
-        track[a0:a1] += 0.55 * seg
+        track[a0:a1] += 0.20 * seg
     impacts = [c for c in program.cues if c.get("kind") == "impact"]
     for c in impacts:
         a0 = int(c["t"] * SR)
@@ -137,8 +137,8 @@ def render_sfx(program: Any, duration: float, seed: int = 5) -> tuple[np.ndarray
         tt = np.arange(length, dtype=np.float32) / SR
         freq = 52.0 + 55.0 * np.exp(-tt * 18.0)
         phase = 2 * np.pi * np.cumsum(freq) / SR
-        thump = np.sin(phase) * np.exp(-tt * 11.0) * 0.9 * g
-        tap = _bandpass(rng.standard_normal(length).astype(np.float32), 1200, 5200) * np.exp(-tt * 75.0) * 0.8 * g
+        thump = np.sin(phase) * np.exp(-tt * 11.0) * 0.30 * g
+        tap = _bandpass(rng.standard_normal(length).astype(np.float32), 1200, 5200) * np.exp(-tt * 75.0) * 0.25 * g
         track[a0:a0 + length] += thump + tap
     for c in [c for c in program.cues if c.get("kind") == "whoosh"]:
         a0 = int(c["t"] * SR)
@@ -149,7 +149,7 @@ def render_sfx(program: Any, duration: float, seed: int = 5) -> tuple[np.ndarray
         t = np.linspace(0, 1, a1 - a0, dtype=np.float32)
         shape = np.clip(np.sin(np.pi * t), 0, None) ** 1.8
         seg = _bandpass(rng.standard_normal(a1 - a0).astype(np.float32), 260, 3200) * shape
-        track[a0:a1] += 0.5 * float(c.get("gain", 1.0)) * seg
+        track[a0:a1] += 0.20 * float(c.get("gain", 1.0)) * seg
 
     track = track[: int(duration * SR)]
     report = {
@@ -198,12 +198,12 @@ def build_soundtrack(program: Any, narration_path: str | Path, music_path: str |
 
     # effects sit well under the voice; they are texture, not content
     sfx_rms = _rms(sfx) if np.any(sfx) else 1.0
-    sfx = sfx * (0.30 * narr_rms / sfx_rms) * sfx_gain
+    sfx = sfx * (0.04 * narr_rms / sfx_rms) * sfx_gain
     # stop effects from stepping on the narrator's consonants: gentle ducking by voice activity
     va = voice_activity(narr)
     t_ctl = np.arange(len(va)) / 100.0
     va_full = np.interp(np.arange(n) / SR, t_ctl, va).astype(np.float32)
-    sfx = sfx * (1.0 - 0.38 * va_full)
+    sfx = sfx * (1.0 - 0.85 * va_full)
 
     music_report: dict[str, Any] = {"used": False}
     music = np.zeros(n, np.float32)
