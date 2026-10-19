@@ -56,6 +56,32 @@ jobs:
             --out output/preview/fern_chalk_style_test.mp4 \
             --size 1280x720 --fps 24 --mood mysterious --force
 
+      - name: Prepare Knight Capital story preview narration
+        run: |
+          mkdir -p output/preview/knight_capital
+          python -c "from pathlib import Path; from moduli.chalk_voice import synthesize_espeak; script=' '.join(Path('stories/knight_capital_45_minutes.txt').read_text(encoding='utf-8').split()[:200]); print(synthesize_espeak(script, 'output/preview/knight_capital/narration.mp3'))"
+          cp stories/knight_capital_45_minutes.txt output/preview/knight_capital/story_full.txt
+          cp stories/knight_capital_45_minutes_sources.md output/preview/knight_capital/sources.md
+
+      - name: Render Knight Capital story preview
+        run: |
+          python tools/make_chalk_preview.py \
+            --script stories/knight_capital_45_minutes.txt --words 200 \
+            --audio output/preview/knight_capital/narration.mp3 \
+            --out output/preview/knight_capital/fern_knight_capital_preview.mp4 \
+            --size 1280x720 --fps 24 --mood mysterious --force
+
+      - name: Upload Knight Capital story preview artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fern-knight-capital-preview
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            output/preview/knight_capital/**
+            output/preview/qa/**
+
       - name: Upload preview, scene plan, report, and contact sheets
         if: always()
         uses: actions/upload-artifact@v4
