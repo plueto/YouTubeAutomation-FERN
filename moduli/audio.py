@@ -6,8 +6,9 @@ import tempfile
 
 from moduli.ffmpeg_utils import ffmpeg_path as _ffmpeg
 
-VOICE_DEFAULT = "en-US-GuyNeural"
-KOKORO_VOICE = os.environ.get("KOKORO_VOICE", "").strip()
+VOICE_DEFAULT = "bm_george"
+# FERN narration is intentionally locked to Kokoro George. No env/preference override.
+KOKORO_VOICE = "bm_george"
 
 TTS_TIMEOUT = 45
 KOKORO_TIMEOUT = 900
@@ -592,63 +593,25 @@ def _normalizza(path: str) -> None:
 
 
 def genera_audio(text: str, output_path: str) -> None:
+    """Generate narration with Kokoro bm_george only; never substitute another voice."""
     words = len(text.split())
-    voice = _load_voice()
-    kokoro_voice = _kokoro_voice(voice)
-
-    if kokoro_voice:
-        print(
-            f"[TTS] Kokoro avvio — voce: {kokoro_voice} ({words} parole)...",
-            flush=True,
-        )
-        if _kokoro_tts(text, output_path, kokoro_voice) and _audio_valido(output_path, words):
-            _normalizza(output_path)
-            print(f"[TTS] Audio salvato con Kokoro: {output_path}", flush=True)
-            return
-        print("[TTS] Kokoro fallito — provo la voce Edge configurata...", flush=True)
-    else:
-        print(f"[TTS] Voce configurata: {voice} — uso Edge TTS.", flush=True)
-
-    if (
-        _edge_tts(
-            text,
-            output_path,
-            voice,
-        )
-        and _audio_valido(output_path, words)
-    ):
-        _normalizza(output_path)
-
-        print(
-            f"[TTS] Audio salvato con Edge TTS: {output_path}",
-            flush=True,
-        )
-
-        return
+    voice = "bm_george"
+    output_dir = os.path.dirname(os.path.abspath(output_path))
+    os.makedirs(output_dir, exist_ok=True)
 
     print(
-        "[TTS] Edge TTS fallito — provo gTTS...",
+        f"[TTS] George-only mode — Kokoro voice: {voice} ({words} parole)...",
         flush=True,
     )
-
-    if (
-        _gtts(
-            text,
-            output_path,
-            lang=_gtts_lang(voice),
+    if not _kokoro_tts(text, output_path, voice):
+        raise RuntimeError(
+            "George-only TTS failed: Kokoro bm_george could not generate narration. "
+            "No alternate voice was used. Fix the Kokoro worker/dependencies and retry."
         )
-        and _audio_valido(output_path, words)
-    ):
-        _normalizza(output_path)
-
-        print(
-            f"[TTS] Audio salvato con gTTS: {output_path}",
-            flush=True,
+    if not _audio_valido(output_path, words):
+        raise RuntimeError(
+            "George-only TTS failed: Kokoro bm_george produced invalid/too-short audio. "
+            "No alternate voice was used."
         )
-
-        return
-
-    raise RuntimeError(
-        "TTS fallito: né Kokoro, né Edge TTS, né gTTS "
-        "hanno prodotto un audio valido"
-    )
+    _normalizza(output_path)
+    print(f"[TTS] Audio salvato esclusivamente con Kokoro bm_george: {output_path}", flush=True)
