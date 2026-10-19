@@ -91,6 +91,25 @@ class AudioConsegnaTests(unittest.TestCase):
         edge.assert_not_called()
         gtts.assert_not_called()
 
+    def test_chalk_sfx_stays_quiet_under_speech(self):
+        """Chalk effects remain below 1% of narration RMS while speech is active."""
+        import numpy as np
+        from types import SimpleNamespace
+        from moduli import chalk_sound
+
+        samples = int(3.0 * chalk_sound.SR)
+        narration = np.full(samples, 0.2, dtype=np.float32)
+        effects = np.full(samples, 0.1, dtype=np.float32)
+
+        with patch.object(chalk_sound, "decode_audio", return_value=narration), \
+             patch.object(chalk_sound, "render_sfx", return_value=(effects, {})), \
+             patch.object(chalk_sound, "write_wav"):
+            report = chalk_sound.build_soundtrack(
+                SimpleNamespace(cues=[]), "narration.mp3", None, 3.0, "mix.wav"
+            )
+
+        self.assertLess(report["sfx_rms_vs_voice"], 0.01)
+
     def test_ducking_graph_uses_voice_sidechain_music_curve_and_limiter(self):
         from moduli.montaggio import build_audio_filter_graph
 
