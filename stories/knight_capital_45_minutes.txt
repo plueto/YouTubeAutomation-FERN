@@ -1,0 +1,21 @@
+At 9:30 a.m. on August 1, 2012, the U.S. stock market opened like it did every morning. At Knight Capital, a trading firm built to move orders in fractions of a second, a software rollout turned a routine opening into a financial emergency.
+
+In less than an hour, Knight lost more than $460 million. Not from a bad bet placed by a trader. Not from a market crash. Its own automated system kept sending orders it was never supposed to send.
+
+Here is the detail that makes the story terrifying: the system wasn't trying to gamble with half a billion dollars. It was trying to process just 212 customer orders. But a faulty router produced millions of additional orders and more than four million executions across 154 stocks, trading roughly 397 million shares in about 45 minutes, according to the SEC.
+
+The failure began with a software deployment. Knight had prepared its order router for the New York Stock Exchange's new Retail Liquidity Program. But the code on its production systems was not consistent. An old function, left behind from an earlier version, was still inside the router. New code and old code interpreted a reused flag differently. On one server, an incoming order triggered defective legacy logic.
+
+That logic could not properly recognize that the parent orders had already been filled. Instead of stopping, the router kept sending more orders into the market. A small software failure became an avalanche, repeated at machine speed.
+
+And the warning signs had appeared before the opening bell. The SEC later found that an internal system sent 97 automated emails referencing the router error before the market opened. Those messages were not designed as formal alerts, and staff did not act on them that morning.
+
+This is the part that matters: the catastrophe wasn't caused by one bug alone. It was the combination of an inconsistent deployment, dormant code that remained in production, a reused control flag, inadequate safeguards against runaway orders, and warnings that did not trigger an emergency stop.
+
+The market opened at 9:30. The system began flooding the market. For roughly 45 minutes, Knight built enormous unwanted positions across dozens of stocks. The firm eventually stopped the malfunctioning system and faced a loss above $460 million—an amount large enough to threaten its survival.
+
+In 2013, the SEC charged Knight with failing to maintain adequate controls under the market-access rule. The firm agreed to pay a $12 million penalty.
+
+The lesson isn't that software should never trade. It is that speed magnifies whatever sits underneath it. A system capable of making thousands of decisions in seconds also needs the ability to stop itself in seconds. If one broken component can send unlimited orders, if an old path can wake up unexpectedly, and if a warning can be ignored, automation doesn't remove human error. It scales it.
+
+Knight's disaster wasn't an AI going rogue. It was something much more ordinary—and much more preventable: old code, an incomplete rollout, and safety controls that failed to contain it.
