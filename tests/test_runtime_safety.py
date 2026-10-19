@@ -124,7 +124,8 @@ class RuntimeSafetyTests(unittest.TestCase):
                     patch.object(agent, "notify_done"), \
                     patch.object(agent, "notify_error"), \
                     patch.object(agent, "notify_analytics"), \
-                    patch("moduli.montaggio._media_duration", return_value=3.0):
+                    patch("moduli.montaggio._media_duration", return_value=3.0), \
+                    patch.object(agent, "__file__", os.path.join(tmp, "agent.py")):
                     agent.run_pipeline({"publish_immediately": True})
 
                 self.assertIsNone(calls["args"][3])
@@ -356,7 +357,8 @@ class RuntimeSafetyTests(unittest.TestCase):
                     patch.object(agent, "notify_step"), patch.object(agent, "notify_start"), \
                     patch.object(agent, "notify_done"), patch.object(agent, "notify_error"), \
                     patch.object(agent, "notify_analytics"), \
-                    patch("moduli.montaggio._media_duration", return_value=3.0):
+                    patch("moduli.montaggio._media_duration", return_value=3.0), \
+                    patch.object(agent, "__file__", os.path.join(tmp, "agent.py")):
                     agent.run_pipeline(agent._load_state())
 
                 saved = _json.loads(Path("state.json").read_text(encoding="utf-8"))
