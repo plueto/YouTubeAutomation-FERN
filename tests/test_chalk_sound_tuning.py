@@ -16,13 +16,13 @@ class ChalkSoundTuningTests(unittest.TestCase):
         with patch.dict(os.environ, {"FERN_CHALK_SFX_DB": ""}):
             gains = sound.default_gains()
 
-        self.assertEqual(gains.chalk, -12.0)
-        self.assertEqual(gains.body, -12.0)
-        self.assertEqual(gains.erase, -12.0)
-        self.assertEqual(gains.thump, -12.0)
-        self.assertEqual(gains.whoosh, -12.0)
-        self.assertEqual(gains.tick, -15.0)
-        self.assertEqual(gains.tap, -15.0)
+        self.assertEqual(gains.chalk, -15.0)
+        self.assertEqual(gains.body, -15.0)
+        self.assertEqual(gains.erase, -15.0)
+        self.assertEqual(gains.thump, -15.0)
+        self.assertEqual(gains.whoosh, -15.0)
+        self.assertEqual(gains.tick, -18.0)
+        self.assertEqual(gains.tap, -18.0)
         self.assertEqual(gains.music, 0.0)
 
     def test_environment_override_can_lower_but_never_boost(self):
@@ -34,8 +34,8 @@ class ChalkSoundTuningTests(unittest.TestCase):
         with patch.dict(os.environ, {"FERN_CHALK_SFX_DB": "invalid"}):
             gains = sound.default_gains()
         default_profile = {
-            "chalk": -12.0, "body": -12.0, "tick": -15.0, "erase": -12.0,
-            "thump": -12.0, "tap": -15.0, "whoosh": -12.0, "music": 0.0,
+            "chalk": -15.0, "body": -15.0, "tick": -18.0, "erase": -15.0,
+            "thump": -15.0, "tap": -18.0, "whoosh": -15.0, "music": 0.0,
         }
         self.assertEqual(gains.as_dict(), default_profile)
 
@@ -85,8 +85,8 @@ class ChalkSoundTuningTests(unittest.TestCase):
                 tuned_rms / reference_rms, 0.30,
                 f"default SFX bus was not at least ~10.5 dB down: ratio={tuned_rms / reference_rms:.3f}",
             )
-            self.assertEqual(report["gains_db"]["chalk"], -12.0)
-            self.assertEqual(report["gains_db"]["tick"], -15.0)
+            self.assertEqual(report["gains_db"]["chalk"], -18.0)
+            self.assertEqual(report["gains_db"]["tick"], -18.0)
             self.assertTrue(tuned_mix.is_file())
 
 
