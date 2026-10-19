@@ -85,7 +85,7 @@ class ChalkSoundTuningTests(unittest.TestCase):
                 tuned_rms / reference_rms, 0.30,
                 f"default SFX bus was not at least ~10.5 dB down: ratio={tuned_rms / reference_rms:.3f}",
             )
-            self.assertEqual(report["gains_db"]["chalk"], -18.0)
+            self.assertEqual(report["gains_db"]["chalk"], -15.0)
             self.assertEqual(report["gains_db"]["tick"], -18.0)
             self.assertTrue(tuned_mix.is_file())
 
