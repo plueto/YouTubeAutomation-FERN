@@ -14,13 +14,13 @@ class ChalkSoundTuningTests(unittest.TestCase):
             os.environ.pop("FERN_CHALK_SFX_DB", None)
             gains = sound.default_gains()
 
-        self.assertEqual(gains.chalk, -6.0)
-        self.assertEqual(gains.body, -6.0)
-        self.assertEqual(gains.erase, -6.0)
-        self.assertEqual(gains.thump, -6.0)
-        self.assertEqual(gains.whoosh, -6.0)
-        self.assertEqual(gains.tick, -7.0)
-        self.assertEqual(gains.tap, -7.0)
+        self.assertEqual(gains.chalk, -12.0)
+        self.assertEqual(gains.body, -12.0)
+        self.assertEqual(gains.erase, -12.0)
+        self.assertEqual(gains.thump, -12.0)
+        self.assertEqual(gains.whoosh, -12.0)
+        self.assertEqual(gains.tick, -15.0)
+        self.assertEqual(gains.tap, -15.0)
         self.assertEqual(gains.music, 0.0)
 
     def test_environment_override_can_lower_but_never_boost(self):
@@ -32,8 +32,8 @@ class ChalkSoundTuningTests(unittest.TestCase):
         with patch.dict(os.environ, {"FERN_CHALK_SFX_DB": "invalid"}):
             gains = sound.default_gains()
         default_profile = {
-            "chalk": -6.0, "body": -6.0, "tick": -7.0, "erase": -6.0,
-            "thump": -6.0, "tap": -7.0, "whoosh": -6.0, "music": 0.0,
+            "chalk": -12.0, "body": -12.0, "tick": -15.0, "erase": -12.0,
+            "thump": -12.0, "tap": -15.0, "whoosh": -12.0, "music": 0.0,
         }
         self.assertEqual(gains.as_dict(), default_profile)
 

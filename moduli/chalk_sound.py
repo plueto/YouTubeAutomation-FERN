@@ -111,18 +111,20 @@ class SfxGains:
         return {k: getattr(self, k) for k in (*STEM_ORDER, "music")}
 
 
-DEFAULT_SFX_DB = -6.0
-# The chalk touch-down tick and the impact click are the sharpest transients. On the final program they sat
-# 0.2-0.3 dB above the -8 dB (re narration RMS) criterion at a uniform -6 dB, so those two get 1 dB more
-# (docs/qa/sound_lab_2). Only the shipped default has this; an explicit FERN_CHALK_SFX_DB is uniform.
-DEFAULT_EXTRA_DB = {"tick": -1.0, "tap": -1.0}
+DEFAULT_SFX_DB = -12.0
+# User playback feedback found the initial -6 dB trial still too loud. Use a further 6 dB reduction
+# by default, then attenuate the sharp chalk touch-down tick and impact click by another 3 dB.
+# That makes the default tick/tap level -15 dB relative to the old reference mix.
+# These defaults are deliberately conservative; actual production narration still needs listening review.
+DEFAULT_EXTRA_DB = {"tick": -3.0, "tap": -3.0}
 
 
 def default_gains() -> SfxGains:
-    """The shipped effect levels: every effect stem ``FERN_CHALK_SFX_DB`` dB (default -6) under the v1 level.
+    """The shipped effect levels: every effect stem is -12 dB by default, with tick/tap another -3 dB.
 
-    Chosen in docs/qa/sound_lab_1 (variant B2). Values above 0 are refused: this setting exists to *reduce*
-    effects, never to boost them. ``FERN_CHALK_SFX_DB=0`` restores the v1 mix exactly.
+    User playback feedback found the earlier -6 dB experiment still too loud. Values above 0 are refused:
+    this setting exists to *reduce* effects, never to boost them. ``FERN_CHALK_SFX_DB=0`` explicitly
+    restores the v1 gain level for troubleshooting or comparison.
     """
     import os
     raw = os.environ.get("FERN_CHALK_SFX_DB", "").strip()
