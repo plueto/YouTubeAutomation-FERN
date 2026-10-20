@@ -84,9 +84,16 @@ def _rights_status(candidate: dict[str, Any]) -> tuple[bool, str]:
     ):
         return False, f"license is not suitable for monetized/editing use: {license_text}"
     if candidate.get("rights_confirmed") is True:
-        if candidate.get("rights_documentation"):
-            return True, "documented permission/rights confirmation"
-        return False, "rights_confirmed requires a rights_documentation record"
+        if not candidate.get("rights_documentation"):
+            return False, "rights_confirmed requires a rights_documentation record"
+        if license_compact.startswith("ccby") or license_text.startswith("creative commons attribution"):
+            has_credit = bool(str(candidate.get("attribution") or candidate.get("credit") or candidate.get("channel_title") or "").strip())
+            license_url = str(candidate.get("license_url") or candidate.get("license_page") or "").strip()
+            if not has_credit:
+                return False, "Creative Commons Attribution license requires creator/source attribution"
+            if not license_url:
+                return False, "Creative Commons Attribution license is missing its official license URL"
+        return True, "documented permission/rights confirmation"
     if not license_text:
         return False, "missing license/permission metadata"
     if license_compact in {"cc0", "publicdomain", "publicdomainmark", "creativecommonszero"}:
@@ -102,8 +109,11 @@ def _rights_status(candidate: dict[str, Any]) -> tuple[bool, str]:
                 return False, "CC BY-SA share-alike obligations require explicit compliance confirmation"
         if license_compact.startswith("ccbysa") and not has_credit:
             return False, "CC BY-SA requires attribution metadata"
-        if (license_compact.startswith("ccby") or license_text.startswith("creative commons attribution")) and not has_credit:
-            return False, "CC BY requires attribution metadata"
+        if license_compact.startswith("ccby") or license_text.startswith("creative commons attribution"):
+            if not has_credit:
+                return False, "CC BY requires attribution metadata"
+            if not str(candidate.get("license_url") or candidate.get("license_page") or "").strip():
+                return False, "Creative Commons Attribution license is missing its official license URL"
         return True, f"license: {license_text}"
     if license_text in {"licensed", "permission granted", "used with permission", "owned by us"}:
         return (bool(candidate.get("rights_documentation")), "documented license" if candidate.get("rights_documentation") else "license label lacks a rights record")
