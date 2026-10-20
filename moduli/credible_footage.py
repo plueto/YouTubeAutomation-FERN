@@ -89,6 +89,9 @@ def _rights_status(candidate: dict[str, Any]) -> tuple[bool, str]:
         "creativecommonsattributionsharealike", "creativecommons", "creativecommon",
     } or license_text.startswith("creative commons attribution"):
         has_credit = bool(str(candidate.get("attribution") or candidate.get("credit") or candidate.get("channel_title") or "").strip())
+        if "sharealike" in license_compact or "share alike" in license_text:
+            if candidate.get("sharealike_compliance_confirmed") is not True:
+                return False, "CC BY-SA share-alike obligations require explicit compliance confirmation"
         if license_compact.startswith("ccbysa") and not has_credit:
             return False, "CC BY-SA requires attribution metadata"
         if (license_compact.startswith("ccby") or license_text.startswith("creative commons attribution")) and not has_credit:
