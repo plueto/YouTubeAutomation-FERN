@@ -23,10 +23,14 @@ def append_footage_credits(metadata: dict[str, Any], video_path: str | Path) -> 
         return dict(metadata)
     try:
         plan = json.loads(scene_plan_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return dict(metadata)
+    except (OSError, json.JSONDecodeError) as exc:
+        # A present-but-unreadable scene plan means the publisher cannot verify
+        # required credits. Fail closed rather than silently uploading uncredited.
+        raise ValueError("Cannot verify footage attribution: scene-plan sidecar is unreadable.") from exc
+    if not isinstance(plan, dict) or not isinstance(plan.get("scenes"), list):
+        raise ValueError("Cannot verify footage attribution: scene-plan sidecar has no scenes list.")
 
-    rows = plan.get("scenes", []) if isinstance(plan, dict) else []
+    rows = plan["scenes"]
     unique: dict[tuple[str, str], str] = {}
     for row in rows if isinstance(rows, list) else []:
         footage = row.get("footage") if isinstance(row, dict) else None
