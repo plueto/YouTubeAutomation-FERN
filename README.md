@@ -96,7 +96,7 @@ Every day, at the time you choose, TubeAssistant:
 1. **Reads your channel analytics** to understand what's performing
 2. **Picks a topic** aligned with your niche and goals
 3. **Writes a full script** using an LLM (OpenRouter, Ollama Cloud, or local)
-4. **Synthesizes narration** with Edge TTS — natural voice, zero cost
+4. **Synthesizes narration** with Kokoro `bm_george` — a consistent, pinned voice
 5. **Builds the scene timeline** — the chalk chunk engine is the default; it searches a bounded set of Internet Archive records for exact-topic CC0/Public Domain Mark/CC BY video and uses only sources that pass relevance, local-file, and license checks
 6. **Falls back to chalk** whenever no suitable real clip passes the gates; the older Pexels/Openverse stock montage remains available as an explicit legacy mode
 7. **Generates a thumbnail** with AI (Pollinations.ai or HuggingFace FLUX) + automatic text overlay
