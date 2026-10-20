@@ -139,16 +139,19 @@ def render_chalk_video(audio_path: str, script_text: str, output_path: str, *, m
         # pass can be retried with the automatic, license-filtered archive pool.
         base_plan = copy.deepcopy(plan)
         if configured_manifest:
+            # An explicit user-configured manifest takes precedence and opts out
+            # of network discovery; unapproved/missing rows still stay chalk.
             manifest_path = Path(configured_manifest).expanduser()
             plan = apply_footage_manifest(plan, script_text, manifest_path)
         else:
+            from moduli.credible_footage import MANIFEST_SCHEMA, script_fingerprint
+
             manifest_path = root / "output" / "footage_candidates.json"
             plan = apply_footage_manifest(plan, script_text, manifest_path)
             first_report = plan.get("footage_report") if isinstance(plan.get("footage_report"), dict) else {}
-            no_real_footage = int(first_report.get("scenes_with_footage") or 0) == 0
-            should_discover = auto_enabled and (
-                first_report.get("status") != "applied" or no_real_footage
-            )
+            first_count = int(first_report.get("scenes_with_footage") or 0)
+            scene_count = len(base_plan.get("scenes", []))
+            should_discover = auto_enabled and first_count < scene_count
             if should_discover:
                 auto_manifest = root / "output" / "footage_candidates_auto.json"
                 try:
@@ -162,15 +165,56 @@ def render_chalk_video(audio_path: str, script_text: str, output_path: str, *, m
                         flush=True,
                     )
                     if discovery.get("candidates_downloaded", 0):
-                        auto_plan = apply_footage_manifest(base_plan, script_text, auto_manifest)
-                        auto_report = auto_plan.get("footage_report")
-                        if isinstance(auto_report, dict):
-                            auto_report["automatic_discovery"] = discovery
-                        if isinstance(auto_report, dict) and int(auto_report.get("scenes_with_footage") or 0) > 0:
-                            plan = auto_plan
-                        else:
-                            if isinstance(plan.get("footage_report"), dict):
-                                plan["footage_report"]["automatic_discovery"] = discovery
+                        # Combine only manifests bound to this exact narration.
+                        # This fills gaps without discarding hand-curated, approved
+                        # footage already selected for other chunks.
+                        candidates = []
+                        for candidate_manifest in (manifest_path, auto_manifest):
+                            try:
+                                payload = json.loads(candidate_manifest.read_text(encoding="utf-8-sig"))
+                            except (OSError, json.JSONDecodeError):
+                                continue
+                            if (
+                                not isinstance(payload, dict)
+                                or payload.get("schema") != MANIFEST_SCHEMA
+                                or payload.get("script_sha256") != script_fingerprint(script_text)
+                                or not isinstance(payload.get("candidates"), list)
+                            ):
+                                continue
+                            candidates.extend(row for row in payload["candidates"] if isinstance(row, dict))
+                        combined_manifest = root / "output" / "footage_candidates_combined.json"
+                        combined_payload = {
+                            "schema": MANIFEST_SCHEMA,
+                            "script_sha256": script_fingerprint(script_text),
+                            "script_file": "",
+                            "candidate_export": "curated manifest + automatic Internet Archive catalog",
+                            "policy": {
+                                "require_relevant_title_or_description": True,
+                                "require_approved_source_type": True,
+                                "require_reusable_license_or_documented_permission": True,
+                                "fallback": "chalk",
+                            },
+                            "candidates": candidates,
+                        }
+                        combined_manifest.parent.mkdir(parents=True, exist_ok=True)
+                        temporary_manifest = combined_manifest.with_suffix(combined_manifest.suffix + ".tmp")
+                        temporary_manifest.write_text(
+                            json.dumps(combined_payload, ensure_ascii=False, indent=2) + "\n",
+                            encoding="utf-8",
+                        )
+                        os.replace(temporary_manifest, combined_manifest)
+                        combined_plan = apply_footage_manifest(
+                            copy.deepcopy(base_plan), script_text, combined_manifest
+                        )
+                        combined_report = combined_plan.get("footage_report")
+                        if isinstance(combined_report, dict):
+                            combined_report["automatic_discovery"] = discovery
+                            combined_report["curated_manifest"] = str(manifest_path) if manifest_path.is_file() else None
+                            combined_report["automatic_manifest"] = str(auto_manifest)
+                        if isinstance(combined_report, dict) and int(combined_report.get("scenes_with_footage") or 0) >= first_count:
+                            plan = combined_plan
+                        elif isinstance(plan.get("footage_report"), dict):
+                            plan["footage_report"]["automatic_discovery"] = discovery
                     elif isinstance(plan.get("footage_report"), dict):
                         plan["footage_report"]["automatic_discovery"] = discovery
                 except Exception as exc:
