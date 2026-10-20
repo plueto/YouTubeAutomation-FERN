@@ -325,6 +325,22 @@ def discover_archive_footage(
         if not _download_file(identifier, file_name, local_path, max_bytes):
             rejections["download"] += 1
             continue
+        duration = _probe_duration(local_path)
+        try:
+            min_scene_seconds = max(
+                4.0,
+                min(30.0, float(os.environ.get("FERN_CHALK_BEAT_SECONDS", "7.5"))),
+            )
+        except (TypeError, ValueError):
+            min_scene_seconds = 7.5
+        if duration is None or duration < min_scene_seconds:
+            rejections["media_file"] += 1
+            local_path.unlink(missing_ok=True)
+            continue
+        # Prefer the middle of the clip, not a likely intro/logo frame at 0s.
+        # The scene renderer consumes frames continuously and falls back to chalk
+        # if a source runs out; the minimum-duration check reduces mid-scene cuts.
+        source_start_seconds = max(0.0, (duration - min_scene_seconds) / 2.0)
 
         title = _as_text(metadata.get("title") or doc.get("title"))
         description = _as_text(metadata.get("description") or doc.get("description"))
@@ -353,7 +369,7 @@ def discover_archive_footage(
             "video_id": identifier,
             "review_status": "approved",
             "approval_policy": "archive-license-topic-gate-v1",
-            "source_start_seconds": 0.0,
+            "source_start_seconds": round(source_start_seconds, 3),
         })
         indexed[identifier] = {
             "title": title, "source_url": f"https://archive.org/details/{identifier}",
