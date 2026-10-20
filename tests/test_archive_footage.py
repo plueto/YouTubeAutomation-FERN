@@ -10,6 +10,7 @@ from moduli.archive_footage import (
     discover_archive_footage,
     license_from_url,
 )
+from moduli.credible_footage import script_fingerprint
 
 
 class ArchiveFootageTests(unittest.TestCase):
@@ -140,9 +141,7 @@ class ArchiveFootageTests(unittest.TestCase):
             self.assertTrue(Path(manifest["candidates"][0]["path"]).is_file())
             self.assertEqual(
                 manifest["script_sha256"],
-                __import__("hashlib").sha256(
-                    " ".join(scene["narration_excerpt"].split()).encode("utf-8")
-                ).hexdigest(),
+                script_fingerprint(scene["narration_excerpt"]),
             )
 
 
