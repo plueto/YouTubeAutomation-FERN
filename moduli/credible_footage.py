@@ -12,6 +12,7 @@ import math
 import re
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 MANIFEST_SCHEMA = "fern-footage-candidates-v1"
 
@@ -36,7 +37,7 @@ _PRIMARY_SOURCE_TYPES = {
     "public_domain_archive", "original_event", "licensed_primary_source",
 }
 _RELIABLE_REPORTING_TYPES = {
-    "news_original_reporting", "university_primary", "licensed_stock",
+    "news_original_reporting", "university_primary", "licensed_stock", "licensed_archive_video",
 }
 _DISALLOWED_TYPES = {
     "ai_summary", "ai_storytelling", "storytelling", "commentary", "reaction",
@@ -154,6 +155,23 @@ def _source_tier(candidate: dict[str, Any]) -> tuple[int, str]:
     if kind in _DISALLOWED_TYPES or any(x in kind for x in ("storytelling", "commentary", "reaction", "recap", "compilation", "opinion", "ai_summary")):
         return 0, f"rejected source type: {kind or 'unknown'}"
     verification_method = _norm(candidate.get("verification_method")).replace(" ", "_")
+    if kind == "licensed_archive_video":
+        source_parts = urlparse(str(candidate.get("source_url") or ""))
+        evidence_parts = urlparse(str(candidate.get("verification_evidence_url") or ""))
+        source_path = source_parts.path.strip("/").split("/")
+        evidence_path = evidence_parts.path.strip("/").split("/")
+        if (
+            source_parts.scheme != "https"
+            or source_parts.netloc.casefold() != "archive.org"
+            or len(source_path) != 2
+            or source_path[0] != "details"
+            or evidence_parts.scheme != "https"
+            or evidence_parts.netloc.casefold() != "archive.org"
+            or len(evidence_path) != 2
+            or evidence_path[0] != "metadata"
+            or source_path[1] != evidence_path[1]
+        ):
+            return 0, "archive footage lacks matching source and catalog evidence URLs"
     approved_methods = {
         "official_channel", "official_domain", "verified_uploader",
         "publisher_catalog", "public_archive_catalog", "government_domain",
