@@ -211,7 +211,7 @@ def select_footage_for_scenes(
             total = score + tier * 6
             ranked.append((total, len(matched), -len(str(candidate.get("title") or "")), candidate, path, tier, rights_reason, identity, matched))
         if ranked:
-            ranked.sort(key=lambda item: (item[0], item[1], item[2]), reverse=True)
+            ranked.sort(key=lambda item: (item[0], item[1], item[2], str(item[3].get("title") or "").casefold()), reverse=True)
             _total, _matched_count, _title_len, candidate, path, tier, rights_reason, identity, matched = ranked[0]
             used.add(identity)
             row["footage"] = {
