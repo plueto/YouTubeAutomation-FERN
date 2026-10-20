@@ -361,8 +361,10 @@ def _scarica_tutte_le_clips(keywords: list, visual_plan: list[dict] | None = Non
 
 
 def run_pipeline(state: dict, dry_run: bool = False) -> None:
+    from moduli.render_mode import get_renderer_mode
+    renderer = get_renderer_mode()
     os.makedirs("output", exist_ok=True)
-    _log("━━━ PIPELINE AVVIATA ━━━")
+    _log(f"━━━ PIPELINE AVVIATA — renderer: {renderer} ━━━")
 
     # ── ANALYTICS ──────────────────────────────────────────────────────────
     _segna_step("analytics")
@@ -428,6 +430,18 @@ def run_pipeline(state: dict, dry_run: bool = False) -> None:
         print(f"  Saved Director input: {director_script_path}")
         cp.update({"topic": topic, "content": content, "steps": ["content"]})
         _save_checkpoint(cp)
+
+    # A checkpoint made with the other renderer must never silently reuse its
+    # old montage. Preserve content/audio, discard only visual-render products.
+    previous_renderer = cp.get("renderer")
+    if previous_renderer != renderer:
+        cp["steps"] = [step for step in cp.get("steps", [])
+                       if step not in {"clips", "montage"}]
+        cp.pop("clip_paths", None)
+        cp["renderer"] = renderer
+        _save_checkpoint(cp)
+        _log(f"  → Renderer checkpoint updated: {previous_renderer or 'legacy/unknown'} → {renderer}")
+
     from moduli.visual_plan import save_visual_plan
     visual_plan = save_visual_plan(content.get("script", ""), content.get("visual_beats"))
     _log(f"  → Titolo: {content['title']}")
@@ -439,7 +453,7 @@ def run_pipeline(state: dict, dry_run: bool = False) -> None:
 
     # ── AUDIO ───────────────────────────────────────────────────────────────
     _segna_step("audio")
-    _log("🎙️ [3/7] Audio — sintesi vocale con Edge TTS...")
+    _log("🎙️ [3/7] Audio — Kokoro bm_george only...")
     if "audio" in cp["steps"] and os.path.exists(AUDIO_PATH):
         _log(f"  → Ripreso da checkpoint: {AUDIO_PATH}")
     else:
@@ -456,32 +470,39 @@ def run_pipeline(state: dict, dry_run: bool = False) -> None:
 
     # ── CLIP ────────────────────────────────────────────────────────────────
     _segna_step("clips")
-    _log("🎞️ [4/7] Clip — scarico visual da Openverse...")
     keywords = content.get("video_keywords", [])
     clip_paths = {}
-    if "clips" in cp["steps"] and cp.get("clip_paths"):
-        cached = {k: p for k, p in cp["clip_paths"].items() if os.path.exists(p)}
-        if cached:
-            clip_paths = cached
-            _log(f"  → Ripreso da checkpoint: {len(clip_paths)} clip")
-    if not clip_paths:
-        notify_step("clips", "Scarico clip video da Pexels...")
-        clip_paths = _scarica_tutte_le_clips(keywords, visual_plan)
-        cp["clip_paths"] = clip_paths
+    if renderer == "clips":
+        _log("🎞️ [4/7] Clip — retrieve licensed stock visuals for legacy montage...")
+        if "clips" in cp["steps"] and cp.get("clip_paths"):
+            cached = {k: p for k, p in cp["clip_paths"].items() if os.path.exists(p)}
+            if cached:
+                clip_paths = cached
+                _log(f"  → Ripreso da checkpoint: {len(clip_paths)} clip")
+        if not clip_paths:
+            notify_step("clips", "Scarico clip stock per il montaggio legacy...")
+            clip_paths = _scarica_tutte_le_clips(keywords, visual_plan)
+            cp["clip_paths"] = clip_paths
+            if "clips" not in cp["steps"]:
+                cp["steps"].append("clips")
+            _save_checkpoint(cp)
+
+        # Clip in uso protette dalla potatura LRU.
+        liberati = pulisci_cache(protetti=set(clip_paths.values()))
+        if liberati:
+            _log(f"  → Cache potata: {liberati:.0f} MB liberati (tetto {os.environ.get('MAX_CACHE_MB', '2000')} MB)")
+        if not clip_paths:
+            msg = "Nessuna clip scaricata — pipeline interrotta"
+            _log(f"  ✗ ERRORE: {msg}")
+            notify_error(msg)
+            raise RuntimeError(msg)
+    else:
+        _log("🎞️ [4/7] Visual timeline — chalk chunk engine.")
+        _log("  → No generic clip pool. Narration-matched licensed footage is optional; unsuitable/missing clips stay chalk-only.")
+        cp["clip_paths"] = {}
         if "clips" not in cp["steps"]:
             cp["steps"].append("clips")
         _save_checkpoint(cp)
-
-    # le clip appena scaricate servono al montaggio: mai potarle (LRU per mtime
-    # le cancellerebbe perche' scaricate per prime → ffprobe crash al render)
-    liberati = pulisci_cache(protetti=set(clip_paths.values()))
-    if liberati:
-        _log(f"  → Cache potata: {liberati:.0f} MB liberati (tetto {os.environ.get('MAX_CACHE_MB', '2000')} MB)")
-    if not clip_paths:
-        msg = "Nessuna clip scaricata — pipeline interrotta"
-        _log(f"  ✗ ERRORE: {msg}")
-        notify_error(msg)
-        raise RuntimeError(msg)
 
     # ── MONTAGGIO ───────────────────────────────────────────────────────────
     _check_abort()
@@ -491,8 +512,9 @@ def run_pipeline(state: dict, dry_run: bool = False) -> None:
     # e' poco, prova a liberare la cache, altrimenti aborta con messaggio chiaro
     # invece di crashare a meta' rendering (OSError 28: No space left on device).
     pulisci_temp_render("output")
+    protected_paths = set(clip_paths.values()) if renderer == "clips" else set()
     try:
-        assicura_spazio(work_dir="output", protetti=set(clip_paths.values()))
+        assicura_spazio(work_dir="output", protetti=protected_paths)
     except RuntimeError as e:
         _log(f"  ✗ {e}")
         notify_error(str(e))
@@ -501,10 +523,10 @@ def run_pipeline(state: dict, dry_run: bool = False) -> None:
     if "montage" in cp["steps"] and os.path.exists(VIDEO_PATH):
         _log(f"  → Ripreso da checkpoint: {VIDEO_PATH}")
     else:
-        notify_step("rendering", "Montaggio in corso (5-15 min)...")
+        notify_step("rendering", "Montaggio chunk-engine in corso..." if renderer == "chalk"
+                    else "Montaggio clip in corso...")
 
-        # progresso su Telegram a 25/50/75% e in state.json (per /status):
-        # senza, durante il render l'utente resta 15 minuti al buio
+        # progresso su Telegram a 25/50/75% e in state.json (per /status)
         _soglie_notifica = [25, 50, 75]
 
         def _avanzamento(pct, eta):
@@ -512,17 +534,26 @@ def run_pipeline(state: dict, dry_run: bool = False) -> None:
             if _soglie_notifica and pct >= _soglie_notifica[0]:
                 while _soglie_notifica and pct >= _soglie_notifica[0]:
                     _soglie_notifica.pop(0)
-                notify_step("rendering", f"Rendering {pct}% — ETA {eta}")
+                notify_step("rendering", f"Rendering {pct}% — {eta}")
 
-        monta_video(
-            AUDIO_PATH, list(clip_paths.keys()), clip_paths, VIDEO_PATH,
-            mood=content.get("mood"),
-            on_progress=_avanzamento,
-            captions_text=content.get("script"),
-            visual_plan=visual_plan,
-            subtitle_cues=subtitle_cues,
-        )
-        cp["steps"].append("montage")
+        if renderer == "chalk":
+            from moduli.chalkboard import render_chalkboard_video
+            render_chalkboard_video(
+                AUDIO_PATH, content.get("script", ""), VIDEO_PATH,
+                mood=content.get("mood"),
+                on_progress=_avanzamento,
+            )
+        else:
+            monta_video(
+                AUDIO_PATH, list(clip_paths.keys()), clip_paths, VIDEO_PATH,
+                mood=content.get("mood"),
+                on_progress=_avanzamento,
+                captions_text=content.get("script"),
+                visual_plan=visual_plan,
+                subtitle_cues=subtitle_cues,
+            )
+        if "montage" not in cp["steps"]:
+            cp["steps"].append("montage")
         _save_checkpoint(cp)
     _check_abort()
     size = os.path.getsize(VIDEO_PATH) // (1024 * 1024)
