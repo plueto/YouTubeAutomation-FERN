@@ -288,6 +288,7 @@ def discover_archive_footage(
                 continue
             title = _as_text(doc.get("title"))
             description = _as_text(doc.get("description"))
+            creator = _as_text(doc.get("creator"))
             license_url = _as_text(doc.get("licenseurl"))
             license_name = license_from_url(license_url)
             if not license_name:
