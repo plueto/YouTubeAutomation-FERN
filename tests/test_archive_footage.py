@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 from moduli.archive_footage import (
     _media_files,
     _search_query,
+    _visual_style_rejection,
     discover_archive_footage,
     license_from_url,
 )
@@ -42,6 +43,22 @@ class ArchiveFootageTests(unittest.TestCase):
         ):
             with self.subTest(url=url):
                 self.assertIsNone(license_from_url(url))
+
+    def test_filters_synthetic_storytelling_and_reenactment_without_blacklisting_channels(self):
+        for title in (
+            "AI-generated fictional reenactment of a product launch",
+            "Animated explainer about a product launch",
+            "Text-to-video recap of a technology scandal",
+        ):
+            with self.subTest(title=title):
+                self.assertIsNotNone(_visual_style_rejection(title))
+        self.assertIsNone(
+            _visual_style_rejection(
+                "OpenAI GPT-5 launch interview",
+                "Recorded product demonstration from the actual launch event",
+                "OpenAI",
+            )
+        )
 
     def test_archive_query_uses_only_sanitized_scene_terms(self):
         query = _search_query(["openai", 'gpt" OR mediatype:audio', "launch"])
