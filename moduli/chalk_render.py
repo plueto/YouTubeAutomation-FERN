@@ -21,6 +21,26 @@ from moduli.chalk_engine import ChalkEngine, Program
 from moduli.chalk_sound import build_soundtrack
 
 
+def _cover_source_frame(frame, width: int, height: int, cv2):
+    """Center-crop one decoded BGR frame to the output canvas and return RGB."""
+    if frame is None or getattr(frame, "size", 0) == 0:
+        return None
+    source_h, source_w = frame.shape[:2]
+    if source_h <= 0 or source_w <= 0:
+        return None
+    scale = max(width / source_w, height / source_h)
+    resized_w = max(width, int(round(source_w * scale)))
+    resized_h = max(height, int(round(source_h * scale)))
+    interpolation = cv2.INTER_AREA if scale < 1.0 else cv2.INTER_LINEAR
+    resized = cv2.resize(frame, (resized_w, resized_h), interpolation=interpolation)
+    left = max(0, (resized_w - width) // 2)
+    top = max(0, (resized_h - height) // 2)
+    cropped = resized[top:top + height, left:left + width]
+    if cropped.shape[1] != width or cropped.shape[0] != height:
+        cropped = cv2.resize(cropped, (width, height), interpolation=cv2.INTER_AREA)
+    return cv2.cvtColor(cropped, cv2.COLOR_BGR2RGB)
+
+
 def _program_report(program: Program, plan: dict[str, Any]) -> dict[str, Any]:
     strokes = program.strokes
     return {
@@ -67,6 +87,24 @@ def render_chalk_video(audio_path: str, script_text: str, output_path: str, *, m
         if any("chalk" not in r for r in plan["scenes"]):
             from moduli.chalk_story import plan_chalk_scenes
             plan_chalk_scenes([r for r in plan["scenes"] if "chalk" not in r])
+    # Model-generated paths are never trusted. Real footage must pass the local
+    # manifest's relevance, source-type, and usage-rights gates; otherwise this
+    # chunk remains in the chalk engine.
+    for row in plan.get("scenes", []):
+        if isinstance(row, dict):
+            row.pop("footage", None)
+    root = Path(__file__).resolve().parents[1]
+    configured_manifest = os.environ.get("FERN_FOOTAGE_MANIFEST", "").strip()
+    manifest_path = Path(configured_manifest).expanduser() if configured_manifest else root / "output" / "footage_candidates.json"
+    try:
+        from moduli.credible_footage import apply_footage_manifest
+        plan = apply_footage_manifest(plan, script_text, manifest_path)
+    except Exception as exc:
+        plan["footage_report"] = {"status": "selection_error", "message": f"{type(exc).__name__}: {exc}"}
+        print(f"[chalkboard] footage selector unavailable; all chunks stay chalk-only ({type(exc).__name__})", flush=True)
+    footage_report = plan.get("footage_report") if isinstance(plan.get("footage_report"), dict) else {}
+    selected_footage_scenes = sum(1 for item in plan.get("scenes", []) if isinstance(item, dict) and isinstance(item.get("footage"), dict))
+    print(f"[chalkboard] hybrid visual plan: {selected_footage_scenes} footage chunks, {len(plan.get('scenes', [])) - selected_footage_scenes} chalk chunks", flush=True)
     rows = plan["scenes"]
     plan["duration_seconds"] = round(duration, 3)
     plan["render_dimensions"] = [width, height]
@@ -75,6 +113,7 @@ def render_chalk_video(audio_path: str, script_text: str, output_path: str, *, m
 
     program = compose_program(plan, seed=seed)
     report = _program_report(program, plan)
+    report["footage_selection"] = footage_report
     (target.with_suffix(".scene_plan.json")).write_text(json.dumps(plan, indent=2, ensure_ascii=False), encoding="utf-8")
     (target.with_suffix(".chalk_report.json")).write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
 
@@ -91,26 +130,93 @@ def render_chalk_video(audio_path: str, script_text: str, output_path: str, *, m
         ]
         proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
         last = -1
+        source_frames_rendered = 0
+        footage_scene_failures: list[str] = []
+        scene_index = 0
+        active_scene_index = -1
+        active_footage_path = None
+        active_capture = None
         try:
+            try:
+                import cv2
+            except ImportError:
+                cv2 = None
             assert proc.stdin is not None
             for i in range(total_frames):
-                frame = engine.render(i / fps)
+                timestamp = i / fps
+                while scene_index < len(rows) - 1 and timestamp >= float(rows[scene_index].get("end_seconds", duration)):
+                    scene_index += 1
+                if scene_index != active_scene_index:
+                    if active_capture is not None:
+                        active_capture.release()
+                        active_capture = None
+                    active_scene_index = scene_index
+                    footage = rows[scene_index].get("footage") or {}
+                    candidate_path = str(footage.get("path") or "").strip() if isinstance(footage, dict) else ""
+                    active_footage_path = candidate_path or None
+                    if candidate_path and cv2 is not None and os.path.isfile(candidate_path):
+                        try:
+                            active_capture = cv2.VideoCapture(candidate_path)
+                            if active_capture.isOpened():
+                                source_start = max(0.0, float(footage.get("source_start_seconds") or 0.0))
+                                if source_start:
+                                    active_capture.set(cv2.CAP_PROP_POS_MSEC, source_start * 1000.0)
+                            else:
+                                active_capture.release()
+                                active_capture = None
+                                footage_scene_failures.append(f"{rows[scene_index].get('id', scene_index)}: couldn't open clip")
+                        except Exception as exc:
+                            if active_capture is not None:
+                                active_capture.release()
+                            active_capture = None
+                            footage_scene_failures.append(f"{rows[scene_index].get('id', scene_index)}: {type(exc).__name__}")
+                    elif candidate_path:
+                        footage_scene_failures.append(f"{rows[scene_index].get('id', scene_index)}: video decoder unavailable or file missing")
+                frame = None
+                if active_capture is not None:
+                    try:
+                        ok, decoded = active_capture.read()
+                        if ok:
+                            frame = _cover_source_frame(decoded, width, height, cv2)
+                            if frame is not None:
+                                source_frames_rendered += 1
+                        if frame is None:
+                            active_capture.release()
+                            active_capture = None
+                            footage_scene_failures.append(f"{rows[scene_index].get('id', scene_index)}: clip ended or decode failed; chalk fallback")
+                    except Exception as exc:
+                        active_capture.release()
+                        active_capture = None
+                        footage_scene_failures.append(f"{rows[scene_index].get('id', scene_index)}: decoder error ({type(exc).__name__}); chalk fallback")
+                if frame is None:
+                    frame = engine.render(timestamp)
                 proc.stdin.write(frame.tobytes())
                 pct = int((i + 1) / total_frames * 82)
                 if on_progress and pct >= last + 5:
                     last = pct
                     el = time.time() - started
                     eta = el / (i + 1) * (total_frames - i - 1)
-                    on_progress(pct, f"chalkboard drawing; about {int(eta // 60)}m {int(eta % 60)}s left")
+                    mode = "licensed footage + chalk chunks" if selected_footage_scenes else "chalk drawing"
+                    on_progress(pct, f"{mode}; about {int(eta // 60)}m {int(eta % 60)}s left")
+            if active_capture is not None:
+                active_capture.release()
+                active_capture = None
             proc.stdin.close()
             err = proc.stderr.read() if proc.stderr else b""
             if proc.wait():
                 raise RuntimeError("Chalkboard FFmpeg render failed: " + err.decode("utf-8", "replace")[-3000:])
         except (BrokenPipeError, OSError) as exc:
+            if active_capture is not None:
+                active_capture.release()
             if proc.poll() is None:
                 proc.kill()
             err = proc.stderr.read() if proc.stderr else b""
             raise RuntimeError("Chalkboard frame stream failed: " + err.decode("utf-8", "replace")[-2000:]) from exc
+        report["footage_render"] = {
+            "source_frames_rendered": source_frames_rendered,
+            "scene_failures": footage_scene_failures,
+            "mode": "hybrid" if source_frames_rendered else "chalk_only",
+        }
 
         if on_progress:
             on_progress(86, "designing chalk sound and mixing")
