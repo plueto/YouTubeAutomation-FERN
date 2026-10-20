@@ -191,16 +191,17 @@ def select_footage_for_scenes(
         tier, source_reason = _source_tier(candidate)
         path = _resolve_candidate_path(candidate, manifest_file)
         source_url = str(candidate.get("source_url") or candidate.get("url") or "").strip()
+        review_status = str(candidate.get("review_status") or "").strip().casefold()
         if not rights_ok:
             reason = rights_reason
         elif not tier:
             reason = source_reason
+        elif review_status != "approved":
+            reason = "candidate has not passed explicit review_status=approved"
         elif not source_url:
             reason = "missing source URL/provenance"
         elif path is None:
             reason = "local clip path missing or not a file"
-        elif str(candidate.get("review_status") or "").casefold() in {"rejected", "blocked"}:
-            reason = "candidate explicitly rejected"
         else:
             usable.append((candidate, path, tier, rights_reason, _candidate_identity(candidate, path)))
             continue
