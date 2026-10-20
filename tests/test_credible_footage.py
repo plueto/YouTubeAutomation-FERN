@@ -105,6 +105,42 @@ class CredibleFootageTests(unittest.TestCase):
         self.assertEqual(report["scenes_chalk_fallback"], 1)
         self.assertEqual(scenes[0]["footage_decision"], "chalk_fallback_no_suitable_verified_clip")
 
+    def test_rejects_abbreviated_noncommercial_and_no_derivatives_even_with_permission_metadata(self):
+        scene = {
+            "id": "beat-001",
+            "title": "OpenAI GPT-5 launch",
+            "labels": ["OpenAI product", "live demonstration"],
+            "narration_excerpt": "OpenAI reveals the GPT-5 product in a live launch demonstration.",
+        }
+        for license_name in ("CC BY-NC", "CC BY-ND 4.0", "CC BY-NC-SA 4.0"):
+            with self.subTest(license=license_name):
+                scenes, report = select_footage_for_scenes(
+                    [scene],
+                    [self.candidate(
+                        license=license_name,
+                        rights_confirmed=True,
+                        rights_documentation="permission email recorded in rights folder",
+                    )],
+                    self.manifest,
+                )
+                self.assertNotIn("footage", scenes[0])
+                self.assertEqual(report["scenes_chalk_fallback"], 1)
+                self.assertIn("not suitable", report["candidates_rejected"][0]["reason"])
+
+    def test_rejects_ambiguous_creative_commons_label(self):
+        scenes, report = select_footage_for_scenes(
+            [{
+                "id": "beat-001",
+                "title": "OpenAI GPT-5 product launch",
+                "labels": ["OpenAI", "GPT-5"],
+                "narration_excerpt": "OpenAI GPT-5 product launch demonstration.",
+            }],
+            [self.candidate(license="Creative Commons")],
+            self.manifest,
+        )
+        self.assertNotIn("footage", scenes[0])
+        self.assertIn("unsupported or unclear license", report["candidates_rejected"][0]["reason"])
+
     def test_manifest_is_ignored_for_different_script(self):
         script = "The exact narration for this video."
         self.manifest.write_text(json.dumps({
