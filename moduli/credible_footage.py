@@ -73,14 +73,14 @@ def _rights_status(candidate: dict[str, Any]) -> tuple[bool, str]:
     """
     license_text = _norm(candidate.get("license") or candidate.get("license_name"))
     license_compact = license_text.replace(" ", "")
+    if any(term in license_text for term in ("non commercial", "noncommercial", "no derivatives", "no derivative")):
+        return False, f"license is not suitable for monetized/editing use: {license_text}"
     if candidate.get("rights_confirmed") is True:
         if candidate.get("rights_documentation"):
             return True, "documented permission/rights confirmation"
         return False, "rights_confirmed requires a rights_documentation record"
     if not license_text:
         return False, "missing license/permission metadata"
-    if any(term in license_text for term in ("non commercial", "noncommercial", "no derivatives", "no derivative")):
-        return False, f"license is not suitable for monetized/editing use: {license_text}"
     if license_compact in {"cc0", "publicdomain", "publicdomainmark", "creativecommonszero"}:
         return True, f"license: {license_text}"
     if license_compact in {
