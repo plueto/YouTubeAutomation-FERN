@@ -151,28 +151,44 @@ def run(dry_run: bool = False):
     from moduli.sottotitoli import cue_da_script
     subtitle_cues = cue_da_script(content.get("script", ""), _media_duration(AUDIO_PATH))
 
-    print("\n=== [C] Fetching video clips ===")
-    clip_paths = scarica_pool_clips(content.get("video_keywords", []), AUDIO_PATH,
-                                    visual_plan=visual_plan)
+    from moduli.render_mode import get_renderer_mode
+    renderer = get_renderer_mode()
 
-    if not clip_paths:
-        print("ERROR: No clips downloaded. Aborting.")
-        sys.exit(1)
+    print("\n=== [C] Preparing visual timeline ===")
+    clip_paths = {}
+    if renderer == "clips":
+        print("  Renderer: legacy stock-clip montage (FERN_RENDERER=clips)")
+        clip_paths = scarica_pool_clips(content.get("video_keywords", []), AUDIO_PATH,
+                                        visual_plan=visual_plan)
+        if not clip_paths:
+            print("ERROR: No clips downloaded. Aborting.")
+            sys.exit(1)
+    else:
+        print("  Renderer: chalk chunk engine (default)")
+        print("  Real footage is used only when the narration-matched, rights-cleared manifest passes validation.")
+        print("  Missing or unsuitable footage stays chalk-only.")
 
     print("\n=== [D] Rendering video ===")
     from moduli.manutenzione import (
         assicura_spazio, pulisci_cache, pulisci_temp_render, spazio_libero_gb,
     )
     pulisci_temp_render("output")
-    # `protetti`: senza, la pulizia cache puo' cancellare le clip appena
-    # scaricate (sono le piu' vecchie per mtime) e il render crasha su ffprobe
+    # Preserve downloaded clips only when the legacy montage is active.
     protetti = set(clip_paths.values())
-    pulisci_cache(protetti=protetti)
+    if renderer == "clips":
+        pulisci_cache(protetti=protetti)
     assicura_spazio(work_dir="output", protetti=protetti)
     print(f"  Disk free: {spazio_libero_gb('output'):.1f} GB")
-    monta_video(AUDIO_PATH, list(clip_paths.keys()), clip_paths, VIDEO_PATH,
-                mood=content.get("mood"), captions_text=content.get("script"),
-                visual_plan=visual_plan, subtitle_cues=subtitle_cues)
+    if renderer == "chalk":
+        from moduli.chalkboard import render_chalkboard_video
+        render_chalkboard_video(
+            AUDIO_PATH, content.get("script", ""), VIDEO_PATH,
+            mood=content.get("mood"),
+        )
+    else:
+        monta_video(AUDIO_PATH, list(clip_paths.keys()), clip_paths, VIDEO_PATH,
+                    mood=content.get("mood"), captions_text=content.get("script"),
+                    visual_plan=visual_plan, subtitle_cues=subtitle_cues)
     print(f"  Saved: {VIDEO_PATH}")
 
     print("\n=== [E] Generating thumbnail ===")
