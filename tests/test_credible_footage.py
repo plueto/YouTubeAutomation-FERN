@@ -30,6 +30,8 @@ class CredibleFootageTests(unittest.TestCase):
             "source_url": "https://www.youtube.com/watch?v=example123",
             "path": str(self.clip_a),
             "source_type": "product_demo",
+            "source_verified": True,
+            "verification_method": "official_channel",
             "license": "CC BY",
             "attribution": "OpenAI",
             "review_status": "approved",
