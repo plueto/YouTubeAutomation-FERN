@@ -84,6 +84,26 @@ def _terms_for_scene(scene: dict) -> list[str]:
     return values[:5]
 
 
+def _visual_style_rejection(*values: object) -> str | None:
+    """Reject obvious synthetic/storytelling formats, not particular channels.
+
+    Metadata cannot prove visual authenticity, so this is a conservative extra
+    filter. False positives stay chalk-only rather than turning into filler.
+    """
+    text = re.sub(r"[^a-z0-9]+", " ", " ".join(_as_text(v) for v in values).casefold()).strip()
+    signals = (
+        "ai generated", "ai storytelling", "ai narrated", "synthetic video",
+        "text to video", "animated explainer", "animated story", "animation",
+        "fictional", "reenactment", "re enactment", "reconstruction",
+        "fan edit", "reaction video", "commentary channel", "recap",
+        "compilation", "storytime", "video essay",
+    )
+    for signal in signals:
+        if re.search(rf"\\b{re.escape(signal)}\\b", text):
+            return f"format/source description suggests non-original storytelling: {signal}"
+    return None
+
+
 def _search_query(terms: list[str]) -> str:
     # Terms are restricted to lowercase alphanumerics before being inserted
     # into the Archive.org Lucene query.
@@ -234,7 +254,7 @@ def discover_archive_footage(
     indexed: dict[str, dict] = {}
     queries_run = 0
     errors: list[str] = []
-    rejections = {"license": 0, "relevance": 0, "metadata": 0, "media_file": 0, "download": 0}
+    rejections = {"license": 0, "style": 0, "relevance": 0, "metadata": 0, "media_file": 0, "download": 0}
 
     queries: list[tuple[int, dict, list[str]]] = []
     seen_queries = set()
@@ -274,6 +294,10 @@ def discover_archive_footage(
                 rejections["license"] += 1
                 continue
             subject = _as_text(doc.get("subject"))
+            style_reason = _visual_style_rejection(title, description, creator, subject)
+            if style_reason:
+                rejections["style"] += 1
+                continue
             candidate_for_score = {
                 "title": title, "description": description, "tags": subject.split(),
             }
@@ -345,11 +369,15 @@ def discover_archive_footage(
         title = _as_text(metadata.get("title") or doc.get("title"))
         description = _as_text(metadata.get("description") or doc.get("description"))
         creator = _as_text(metadata.get("creator") or metadata.get("uploader") or doc.get("creator"))
+        subjects = _as_text(metadata.get("subject") or doc.get("subject"))
+        if _visual_style_rejection(title, description, creator, subjects):
+            rejections["style"] += 1
+            local_path.unlink(missing_ok=True)
+            continue
         if license_name.startswith("CC BY") and not creator.strip():
             rejections["metadata"] += 1
             local_path.unlink(missing_ok=True)
             continue
-        subjects = _as_text(metadata.get("subject") or doc.get("subject"))
         candidates.append({
             "title": title,
             "description": description,
