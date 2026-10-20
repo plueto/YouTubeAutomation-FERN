@@ -62,11 +62,12 @@ def _write_footage_attribution(target: Path, rows: list[dict[str, Any]]) -> str:
         credit = str(footage.get("attribution") or footage.get("channel") or "Creator not supplied")
         source_url = str(footage.get("source_url") or "Source URL not supplied")
         license_text = str(footage.get("license") or "License not supplied")
+        license_url = str(footage.get("license_url") or "")
         lines.extend([
             f"{index + 1}. {title} ({start:.3f}s–{end:.3f}s)",
             f"   Credit: {credit}",
             f"   Source: {source_url}",
-            f"   License: {license_text}",
+            f"   License: {license_text}" + (f" ({license_url})" if license_url else ""),
             "",
         ])
     if not used:
