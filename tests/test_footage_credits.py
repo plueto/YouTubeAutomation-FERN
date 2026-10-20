@@ -67,6 +67,13 @@ class FootageCreditsTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "CC BY attribution"):
                 append_footage_credits({"description": "Original"}, video)
 
+    def test_unreadable_scene_plan_blocks_upload_metadata(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            video = Path(tmp) / "output_finale.mp4"
+            video.with_suffix(".scene_plan.json").write_text("{not-json", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "scene-plan sidecar is unreadable"):
+                append_footage_credits({"description": "Original"}, video)
+
     def test_credits_too_long_raise_instead_of_truncating_rights_text(self):
         with tempfile.TemporaryDirectory() as tmp:
             scenes = []
