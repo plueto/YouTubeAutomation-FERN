@@ -32,7 +32,8 @@ class CredibleFootageTests(unittest.TestCase):
             "source_type": "product_demo",
             "source_verified": True,
             "verification_method": "official_channel",
-            "license": "CC BY",
+            "license": "CC BY 4.0",
+            "license_url": "https://creativecommons.org/licenses/by/4.0/",
             "attribution": "OpenAI",
             "review_status": "approved",
         }
