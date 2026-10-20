@@ -99,7 +99,7 @@ def _visual_style_rejection(*values: object) -> str | None:
         "compilation", "storytime", "video essay",
     )
     for signal in signals:
-        if re.search(rf"\\b{re.escape(signal)}\\b", text):
+        if f" {signal} " in f" {text} ":
             return f"format/source description suggests non-original storytelling: {signal}"
     return None
 
