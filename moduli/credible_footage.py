@@ -139,8 +139,13 @@ def _relevance(query: str, candidate: dict[str, Any]) -> tuple[int, int, set[str
         return score, required, matched, "specific topic absent from title"
     if len(matched) < required:
         return score, required, matched, f"weak topic match ({len(matched)}/{required} key terms)"
-    if len(query_terms) > 2 and not title_matched:
-        return score, required, matched, "no key topic term in title"
+    # One generic shared term (for example "AI") is not enough to attach a
+    # clip to a named story. Require at least two specific title terms whenever
+    # a scene has more than two meaningful query terms.
+    if len(query_terms) > 2 and len(title_matched) < 2:
+        return score, required, matched, (
+            f"fewer than two key topic terms in title ({len(title_matched)}/2)"
+        )
     return score, required, matched, "relevant"
 
 
