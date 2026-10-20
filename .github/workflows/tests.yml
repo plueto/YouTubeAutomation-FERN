@@ -49,6 +49,8 @@ jobs:
           python -c "from pathlib import Path; from moduli.chalk_voice import synthesize_espeak; script=Path('tests/fixtures/chalk_engine_style_test.txt').read_text(encoding='utf-8'); print(synthesize_espeak(script, 'output/preview/fern_chalk_style_test_narration.mp3'))"
 
       - name: Render and QA chalkboard preview
+        env:
+          FERN_AUTO_ARCHIVE_FOOTAGE: "0"
         run: |
           python tools/make_chalk_preview.py \
             --script tests/fixtures/chalk_engine_style_test.txt --words 200 \
