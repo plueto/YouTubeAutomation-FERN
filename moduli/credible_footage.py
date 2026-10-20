@@ -74,7 +74,9 @@ def _rights_status(candidate: dict[str, Any]) -> tuple[bool, str]:
     license_text = _norm(candidate.get("license") or candidate.get("license_name"))
     license_compact = license_text.replace(" ", "")
     if candidate.get("rights_confirmed") is True:
-        return True, "documented permission/rights confirmation"
+        if candidate.get("rights_documentation"):
+            return True, "documented permission/rights confirmation"
+        return False, "rights_confirmed requires a rights_documentation record"
     if not license_text:
         return False, "missing license/permission metadata"
     if any(term in license_text for term in ("non commercial", "noncommercial", "no derivatives", "no derivative")):
@@ -136,10 +138,18 @@ def _source_tier(candidate: dict[str, Any]) -> tuple[int, str]:
     kind = _source_type(candidate)
     if kind in _DISALLOWED_TYPES or any(x in kind for x in ("storytelling", "commentary", "reaction", "recap", "compilation", "opinion", "ai_summary")):
         return 0, f"rejected source type: {kind or 'unknown'}"
+    verification_method = _norm(candidate.get("verification_method")).replace(" ", "_")
+    approved_methods = {
+        "official_channel", "official_domain", "verified_uploader",
+        "publisher_catalog", "public_archive_catalog", "government_domain",
+        "university_domain", "licensed_stock_catalog",
+    }
+    if candidate.get("source_verified") is not True or verification_method not in approved_methods:
+        return 0, "source is not independently verified by an approved method"
     if kind in _PRIMARY_SOURCE_TYPES:
-        return 3, f"primary/original footage: {kind}"
+        return 3, f"verified primary/original footage: {kind} ({verification_method})"
     if kind in _RELIABLE_REPORTING_TYPES:
-        return 2, f"licensed reporting/stock: {kind}"
+        return 2, f"verified licensed reporting/stock: {kind} ({verification_method})"
     return 0, f"unverified source type: {kind or 'unknown'}"
 
 
