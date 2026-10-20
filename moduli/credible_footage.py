@@ -73,7 +73,14 @@ def _rights_status(candidate: dict[str, Any]) -> tuple[bool, str]:
     """
     license_text = _norm(candidate.get("license") or candidate.get("license_name"))
     license_compact = license_text.replace(" ", "")
-    if any(term in license_text for term in ("non commercial", "noncommercial", "no derivatives", "no derivative")):
+    # Check Creative Commons restriction abbreviations before considering
+    # permission metadata. CC BY-NC and CC BY-ND are not safe defaults for
+    # monetized videos or transformative editing.
+    license_tokens = set(license_text.split())
+    if (
+        any(term in license_text for term in ("non commercial", "noncommercial", "no derivatives", "no derivative"))
+        or bool(license_tokens & {"nc", "nd"})
+    ):
         return False, f"license is not suitable for monetized/editing use: {license_text}"
     if candidate.get("rights_confirmed") is True:
         if candidate.get("rights_documentation"):
@@ -86,7 +93,7 @@ def _rights_status(candidate: dict[str, Any]) -> tuple[bool, str]:
     if license_compact in {
         "ccby", "ccby40", "ccby3", "ccby30", "creativecommonsattribution",
         "ccby-sa", "ccbysa", "ccbysa40", "ccbysa30",
-        "creativecommonsattributionsharealike", "creativecommons", "creativecommon",
+        "creativecommonsattributionsharealike",
     } or license_text.startswith("creative commons attribution"):
         has_credit = bool(str(candidate.get("attribution") or candidate.get("credit") or candidate.get("channel_title") or "").strip())
         if "sharealike" in license_compact or "share alike" in license_text:
