@@ -41,6 +41,40 @@ def _cover_source_frame(frame, width: int, height: int, cv2):
     return cv2.cvtColor(cropped, cv2.COLOR_BGR2RGB)
 
 
+
+def _write_footage_attribution(target: Path, rows: list[dict[str, Any]]) -> str:
+    """Write provenance for every inserted clip beside the MP4."""
+    lines = [
+        "FERN FOOTAGE ATTRIBUTION",
+        "Generated from the source manifest used by the chalk chunk renderer.",
+        "",
+    ]
+    used = 0
+    for index, row in enumerate(rows):
+        footage = row.get("footage") if isinstance(row, dict) else None
+        if not isinstance(footage, dict):
+            continue
+        used += 1
+        start = float(row.get("start_seconds", 0.0))
+        end = float(row.get("end_seconds", 0.0))
+        title = str(footage.get("title") or "Untitled source clip")
+        credit = str(footage.get("attribution") or footage.get("channel") or "Creator not supplied")
+        source_url = str(footage.get("source_url") or "Source URL not supplied")
+        license_text = str(footage.get("license") or "License not supplied")
+        lines.extend([
+            f"{index + 1}. {title} ({start:.3f}s–{end:.3f}s)",
+            f"   Credit: {credit}",
+            f"   Source: {source_url}",
+            f"   License: {license_text}",
+            "",
+        ])
+    if not used:
+        lines.append("No real footage used; all scenes remained chalk-only.")
+    out = target.with_suffix(".footage_attribution.txt")
+    out.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+    return str(out)
+
+
 def _program_report(program: Program, plan: dict[str, Any]) -> dict[str, Any]:
     strokes = program.strokes
     return {
@@ -106,6 +140,9 @@ def render_chalk_video(audio_path: str, script_text: str, output_path: str, *, m
     selected_footage_scenes = sum(1 for item in plan.get("scenes", []) if isinstance(item, dict) and isinstance(item.get("footage"), dict))
     print(f"[chalkboard] hybrid visual plan: {selected_footage_scenes} footage chunks, {len(plan.get('scenes', [])) - selected_footage_scenes} chalk chunks", flush=True)
     rows = plan["scenes"]
+    attribution_path = _write_footage_attribution(target, rows)
+    if isinstance(plan.get("footage_report"), dict):
+        plan["footage_report"]["attribution_file"] = attribution_path
     plan["duration_seconds"] = round(duration, 3)
     plan["render_dimensions"] = [width, height]
     plan["fps"] = fps
