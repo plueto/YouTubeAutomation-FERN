@@ -207,6 +207,8 @@ def run(dry_run: bool = False):
         return
 
     print("\n=== [F] Publishing to YouTube ===")
+    from moduli.footage_credits import append_footage_credits
+    content = append_footage_credits(content, VIDEO_PATH)
     video_id = pubblica_video(VIDEO_PATH, THUMB_PATH, content)
     _registra_pubblicazione(topic, video_id)
     _carica_sottotitoli(video_id, content)
