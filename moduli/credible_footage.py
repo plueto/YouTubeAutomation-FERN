@@ -270,6 +270,7 @@ def select_footage_for_scenes(
                 "source_url": str(candidate.get("source_url") or candidate.get("url") or ""),
                 "source_type": _source_type(candidate),
                 "license": str(candidate.get("license") or candidate.get("license_name") or rights_reason),
+                "license_url": str(candidate.get("license_url") or candidate.get("license_page") or ""),
                 "attribution": str(candidate.get("attribution") or candidate.get("credit") or candidate.get("channel_title") or ""),
                 "source_start_seconds": max(0.0, float(candidate.get("source_start_seconds") or 0.0)),
                 "relevance_terms": sorted(matched),
