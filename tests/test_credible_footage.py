@@ -141,6 +141,25 @@ class CredibleFootageTests(unittest.TestCase):
         self.assertNotIn("footage", scenes[0])
         self.assertIn("unsupported or unclear license", report["candidates_rejected"][0]["reason"])
 
+    def test_one_shared_topic_term_in_title_is_not_enough(self):
+        scenes, report = select_footage_for_scenes(
+            [{
+                "id": "beat-001",
+                "title": "OpenAI GPT-5 product launch",
+                "labels": ["OpenAI", "GPT-5", "product demonstration"],
+                "narration_excerpt": "OpenAI reveals the GPT-5 product in a live launch demonstration.",
+            }],
+            [self.candidate(
+                title="OpenAI talks about the future",
+                description="GPT-5 product launch demonstration and details",
+                tags=["GPT-5", "product", "launch", "demonstration"],
+            )],
+            self.manifest,
+        )
+        self.assertNotIn("footage", scenes[0])
+        self.assertEqual(report["scenes_chalk_fallback"], 1)
+        self.assertIn("two key topic terms", report["decisions"][0]["candidate_rejections"][0]["reason"])
+
     def test_manifest_is_ignored_for_different_script(self):
         script = "The exact narration for this video."
         self.manifest.write_text(json.dumps({
