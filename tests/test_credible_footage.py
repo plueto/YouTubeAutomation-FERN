@@ -121,7 +121,7 @@ class CredibleFootageTests(unittest.TestCase):
             "schema": MANIFEST_SCHEMA,
             "script_sha256": script_fingerprint(script),
             "candidates": [self.candidate(
-                title="The exact narration for this video",
+                title="OpenAI GPT-5 product launch footage",
                 description="OpenAI GPT-5 product launch and demonstration",
             )],
         }), encoding="utf-8")
