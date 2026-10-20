@@ -84,8 +84,13 @@ def _rights_status(candidate: dict[str, Any]) -> tuple[bool, str]:
     if license_compact in {
         "ccby", "ccby40", "ccby3", "ccby30", "creativecommonsattribution",
         "ccby-sa", "ccbysa", "ccbysa40", "ccbysa30",
-        "creativecommonsattributionsharealike", "creativecommons",
-    }:
+        "creativecommonsattributionsharealike", "creativecommons", "creativecommon",
+    } or license_text.startswith("creative commons attribution"):
+        has_credit = bool(str(candidate.get("attribution") or candidate.get("credit") or candidate.get("channel_title") or "").strip())
+        if license_compact.startswith("ccbysa") and not has_credit:
+            return False, "CC BY-SA requires attribution metadata"
+        if (license_compact.startswith("ccby") or license_text.startswith("creative commons attribution")) and not has_credit:
+            return False, "CC BY requires attribution metadata"
         return True, f"license: {license_text}"
     if license_text in {"licensed", "permission granted", "used with permission", "owned by us"}:
         return (bool(candidate.get("rights_documentation")), "documented license" if candidate.get("rights_documentation") else "license label lacks a rights record")
