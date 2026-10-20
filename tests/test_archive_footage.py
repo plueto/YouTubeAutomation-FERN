@@ -48,7 +48,8 @@ class ArchiveFootageTests(unittest.TestCase):
         self.assertIn("mediatype:movies", query)
         self.assertIn('title:"openai"', query)
         self.assertNotIn("mediatype:audio", query)
-        self.assertNotIn('" OR', query)
+        self.assertNotIn('gpt" OR', query)
+        self.assertIn("gptormediatypeaudio", query)
 
     def test_file_selection_skips_non_mp4_private_and_oversized_files(self):
         files = [
@@ -57,7 +58,7 @@ class ArchiveFootageTests(unittest.TestCase):
             {"name": "huge.mp4", "size": str(500 * 1024 * 1024), "format": "MPEG4"},
             {"name": "actual.mp4", "size": "10000", "format": "MPEG4"},
         ]
-        selected = _media_files(files, 200 * 1024 * 1024)
+        selected = _media_files({"files": files}, 200 * 1024 * 1024)
         self.assertEqual([f["name"] for f in selected], ["actual.mp4"])
 
     @patch("moduli.archive_footage._probe_duration", return_value=15.0)
