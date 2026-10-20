@@ -8,6 +8,7 @@ can also be used directly (see ``tools/make_chalk_preview.py``).
 """
 from __future__ import annotations
 
+import copy
 import json
 import os
 import subprocess
@@ -129,10 +130,56 @@ def render_chalk_video(audio_path: str, script_text: str, output_path: str, *, m
             row.pop("footage", None)
     root = Path(__file__).resolve().parents[1]
     configured_manifest = os.environ.get("FERN_FOOTAGE_MANIFEST", "").strip()
-    manifest_path = Path(configured_manifest).expanduser() if configured_manifest else root / "output" / "footage_candidates.json"
+    auto_enabled = os.environ.get("FERN_AUTO_ARCHIVE_FOOTAGE", "1").strip().casefold() not in {"0", "false", "no", "off"}
     try:
         from moduli.credible_footage import apply_footage_manifest
-        plan = apply_footage_manifest(plan, script_text, manifest_path)
+
+        # Keep a pristine plan so a missing/stale manifest or a failed first
+        # pass can be retried with the automatic, license-filtered archive pool.
+        base_plan = copy.deepcopy(plan)
+        if configured_manifest:
+            manifest_path = Path(configured_manifest).expanduser()
+            plan = apply_footage_manifest(plan, script_text, manifest_path)
+        else:
+            manifest_path = root / "output" / "footage_candidates.json"
+            plan = apply_footage_manifest(plan, script_text, manifest_path)
+            first_report = plan.get("footage_report") if isinstance(plan.get("footage_report"), dict) else {}
+            no_real_footage = int(first_report.get("scenes_with_footage") or 0) == 0
+            should_discover = auto_enabled and (
+                first_report.get("status") != "applied" or no_real_footage
+            )
+            if should_discover:
+                auto_manifest = root / "output" / "footage_candidates_auto.json"
+                try:
+                    from moduli.archive_footage import discover_archive_footage
+                    discovery = discover_archive_footage(
+                        base_plan.get("scenes", []), script_text, auto_manifest
+                    )
+                    print(
+                        f"[chalkboard] archive discovery: {discovery.get('candidates_downloaded', 0)} "
+                        f"licensed, topic-matched clip(s) from {discovery.get('queries_run', 0)} search(es)",
+                        flush=True,
+                    )
+                    if discovery.get("candidates_downloaded", 0):
+                        auto_plan = apply_footage_manifest(base_plan, script_text, auto_manifest)
+                        auto_report = auto_plan.get("footage_report")
+                        if isinstance(auto_report, dict):
+                            auto_report["automatic_discovery"] = discovery
+                        if isinstance(auto_report, dict) and int(auto_report.get("scenes_with_footage") or 0) > 0:
+                            plan = auto_plan
+                        else:
+                            if isinstance(plan.get("footage_report"), dict):
+                                plan["footage_report"]["automatic_discovery"] = discovery
+                    elif isinstance(plan.get("footage_report"), dict):
+                        plan["footage_report"]["automatic_discovery"] = discovery
+                except Exception as exc:
+                    if isinstance(plan.get("footage_report"), dict):
+                        plan["footage_report"]["automatic_discovery_error"] = f"{type(exc).__name__}: {exc}"
+                    print(
+                        f"[chalkboard] automatic footage search skipped; unsuitable clips remain chalk-only "
+                        f"({type(exc).__name__}: {exc})",
+                        flush=True,
+                    )
     except Exception as exc:
         plan["footage_report"] = {"status": "selection_error", "message": f"{type(exc).__name__}: {exc}"}
         print(f"[chalkboard] footage selector unavailable; all chunks stay chalk-only ({type(exc).__name__})", flush=True)
