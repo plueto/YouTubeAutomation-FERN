@@ -602,6 +602,8 @@ def run_pipeline(state: dict, dry_run: bool = False) -> None:
             _log("  -> Pubblicazione immediata")
         else:
             _log(f"  → Programmato per: {publish_label}")
+        from moduli.footage_credits import append_footage_credits
+        content = append_footage_credits(content, VIDEO_PATH)
         video_id = pubblica_video(
             VIDEO_PATH,
             THUMB_PATH,
