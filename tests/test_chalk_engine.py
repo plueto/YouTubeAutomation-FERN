@@ -545,7 +545,10 @@ class EndToEndTests(unittest.TestCase):
             audio = Path(d) / "n.mp3"
             info = voice.synthesize_espeak(script, audio)
             out = Path(d) / "v.mp4"
-            rep = render_chalk_video(str(audio), script, str(out), width=320, height=180, fps=12)
+            # Keep the end-to-end renderer test deterministic/offline; the live
+            # pipeline exercises archive discovery separately with mocked APIs.
+            with patch.dict(os.environ, {"FERN_AUTO_ARCHIVE_FOOTAGE": "0"}):
+                rep = render_chalk_video(str(audio), script, str(out), width=320, height=180, fps=12)
             self.assertTrue(out.is_file() and out.stat().st_size > 5000)
             from moduli.ffmpeg_utils import ffprobe_path
             probe_result = subprocess.run(

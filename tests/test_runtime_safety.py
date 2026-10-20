@@ -104,7 +104,8 @@ class RuntimeSafetyTests(unittest.TestCase):
                     calls["kwargs"] = kwargs
                     return "video123"
 
-                with patch.object(agent, "leggi_performance", return_value=[]), \
+                with patch.dict(os.environ, {"FERN_RENDERER": "clips"}), \
+                    patch.object(agent, "leggi_performance", return_value=[]), \
                     patch.object(agent, "calcola_strategia", return_value={}), \
                     patch.object(agent, "genera_topic", return_value="topic"), \
                     patch.object(agent, "genera_contenuto", return_value={
@@ -343,7 +344,8 @@ class RuntimeSafetyTests(unittest.TestCase):
                 def fake_video(_audio, _keywords, _clips, output_path, **_kw):
                     fake_file(None, output_path)
 
-                with patch.object(agent, "leggi_performance", return_value=[]), \
+                with patch.dict(os.environ, {"FERN_RENDERER": "clips"}), \
+                    patch.object(agent, "leggi_performance", return_value=[]), \
                     patch.object(agent, "calcola_strategia", return_value={}), \
                     patch.object(agent, "genera_contenuto", return_value={
                         "title": "Title", "description": "Desc", "tags": ["tag"],
